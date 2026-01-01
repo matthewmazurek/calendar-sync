@@ -273,6 +273,35 @@ class GitVersionService:
         # File has uncommitted changes (doesn't match any commit)
         return None
 
+    def get_remote_url(self, remote_name: str = "origin") -> Optional[str]:
+        """
+        Get the URL of a git remote.
+
+        Args:
+            remote_name: Name of the remote (default: "origin")
+
+        Returns:
+            Remote URL if found, None otherwise
+        """
+        if not self._is_git_repo():
+            return None
+
+        try:
+            result = subprocess.run(
+                ["git", "remote", "get-url", remote_name],
+                cwd=self.repo_root,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+
+            if result.returncode != 0:
+                return None
+
+            return result.stdout.strip()
+        except Exception:
+            return None
+
     def _is_git_repo(self) -> bool:
         """Check if repo_root is in a git repository."""
         try:

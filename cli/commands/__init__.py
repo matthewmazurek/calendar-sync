@@ -1,5 +1,6 @@
 """CLI commands package."""
 
+from cli.commands.config import config_command
 from cli.commands.delete import delete_command
 from cli.commands.git_setup import git_setup_command
 from cli.commands.info import info_command
@@ -9,6 +10,7 @@ from cli.commands.publish import publish_command
 from cli.commands.restore import restore_command
 
 __all__ = [
+    "config_command",
     "delete_command",
     "git_setup_command",
     "info_command",

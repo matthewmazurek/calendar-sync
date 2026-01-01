@@ -7,6 +7,7 @@ import traceback
 
 from app.exceptions import CalendarError
 from cli.commands import (
+    config_command,
     delete_command,
     git_setup_command,
     info_command,
@@ -154,6 +155,9 @@ def create_parser() -> argparse.ArgumentParser:
         help="Delete local and remote git repository (with confirmation)",
     )
 
+    # Config command
+    subparsers.add_parser("config", help="Display configuration file path and settings")
+
     return parser
 
 
@@ -197,6 +201,8 @@ def main() -> None:
             publish_command(args.calendar_name, args.format)
         elif args.command == "git-setup":
             git_setup_command(delete=getattr(args, "delete", False))
+        elif args.command == "config":
+            config_command()
     except CalendarError as e:
         logger.error(f"Calendar error: {e}")
         sys.exit(1)

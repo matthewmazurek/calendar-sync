@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Optional, Tuple
 
 from app.config import CalendarConfig
+from app.storage.git_version_service import GitVersionService
 
 logger = logging.getLogger(__name__)
 
@@ -30,21 +31,12 @@ def git_setup_command(delete: bool = False) -> None:
     # Check if git repo already exists
     if (calendar_dir / ".git").exists():
         # Check if remote is configured
-        try:
-            result = subprocess.run(
-                ["git", "config", "--get", "remote.origin.url"],
-                cwd=calendar_dir,
-                capture_output=True,
-                text=True,
-                check=False,
-            )
-            if result.returncode == 0:
-                remote_url = result.stdout.strip()
-                print(f"Git repository already exists in {calendar_dir}")
-                print(f"Remote URL: {remote_url}")
-                return
-        except Exception:
-            pass
+        git_service = GitVersionService(calendar_dir)
+        remote_url = git_service.get_remote_url()
+        if remote_url:
+            print(f"Git repository already exists in {calendar_dir}")
+            print(f"Remote URL: {remote_url}")
+            return
 
         print(f"Git repository already exists in {calendar_dir}")
         print("No remote configured. Setting up remote...")
@@ -87,42 +79,7 @@ def git_setup_command(delete: bool = False) -> None:
                 remote_url = f"https://github.com/{username}/{repo_name}.git"
                 print(f"Repository created and remote configured: {remote_url}")
 
-    # Tier 2: Auto-detect from source repo
-    if not remote_url:
-        source_remote = detect_source_repo_remote()
-        if source_remote:
-            username = extract_username_from_remote(source_remote)
-            if username:
-                suggested_repo = f"{username}/calendar-sync-calendars"
-                print(f"\nDetected GitHub username: {username}")
-                response = input(
-                    f"Use GitHub repo '{suggested_repo}'? [Y/n] or enter custom repo name: "
-                ).strip()
-
-                if response.lower() in ["", "y", "yes"]:
-                    repo_name = "calendar-sync-calendars"
-                elif response:
-                    repo_name = response
-                else:
-                    repo_name = "calendar-sync-calendars"
-
-                remote_url = f"https://github.com/{username}/{repo_name}.git"
-                print(f"\nNext steps:")
-                print(f"1. Create the repo on GitHub: https://github.com/new")
-                print(f"   Name: {repo_name}")
-                print(f"   Owner: {username}")
-                print(f"2. Then run: git remote add origin {remote_url}")
-                print(f"   Or paste the repo URL below to set it up now")
-
-                setup_remote = input(
-                    "\nPress Enter to skip remote setup, or paste the repo URL: "
-                ).strip()
-                if setup_remote:
-                    remote_url = setup_remote
-                else:
-                    remote_url = None
-
-    # Tier 3: Manual fallback
+    # Tier 2: Manual fallback
     if not remote_url:
         print("\nCould not auto-detect GitHub settings.")
         manual_url = input(
@@ -264,47 +221,6 @@ def create_repo_with_gh(username: str, repo_name: str, calendar_dir: Path) -> bo
         return False
 
 
-def detect_source_repo_remote() -> Optional[str]:
-    """Walk up from current directory to find source repo, extract remote URL."""
-    try:
-        current_dir = Path.cwd()
-        while current_dir != current_dir.parent:
-            git_dir = current_dir / ".git"
-            if git_dir.exists():
-                # Check for remote URL
-                result = subprocess.run(
-                    ["git", "config", "--get", "remote.origin.url"],
-                    cwd=current_dir,
-                    capture_output=True,
-                    text=True,
-                    check=False,
-                )
-                if result.returncode == 0:
-                    return result.stdout.strip()
-            current_dir = current_dir.parent
-    except Exception:
-        pass
-    return None
-
-
-def extract_username_from_remote(remote_url: str) -> Optional[str]:
-    """Parse GitHub URL to extract username."""
-    # Remove .git suffix if present
-    url = remote_url.rstrip(".git")
-
-    # Handle SSH format: git@github.com:owner/repo
-    ssh_match = re.match(r"git@github\.com:(.+?)/(.+?)$", url)
-    if ssh_match:
-        return ssh_match.group(1)
-
-    # Handle HTTPS format: https://github.com/owner/repo
-    https_match = re.match(r"https?://github\.com/(.+?)/(.+?)$", url)
-    if https_match:
-        return https_match.group(1)
-
-    return None
-
-
 def delete_git_repository(calendar_dir: Path) -> None:
     """Delete local and remote git repository with confirmation."""
     # Check if git repo exists
@@ -314,19 +230,8 @@ def delete_git_repository(calendar_dir: Path) -> None:
         return
 
     # Get remote URL if it exists
-    remote_url = None
-    try:
-        result = subprocess.run(
-            ["git", "config", "--get", "remote.origin.url"],
-            cwd=calendar_dir,
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-        if result.returncode == 0:
-            remote_url = result.stdout.strip()
-    except Exception:
-        pass
+    git_service = GitVersionService(calendar_dir)
+    remote_url = git_service.get_remote_url()
 
     # Show what will be deleted
     print("This will delete:")

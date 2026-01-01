@@ -145,7 +145,7 @@ class GitPublisher:
         """Get remote URL from git config."""
         try:
             result = subprocess.run(
-                ["git", "config", "--get", "remote.origin.url"],
+                ["git", "remote", "get-url", "origin"],
                 cwd=self.calendar_dir,
                 capture_output=True,
                 text=True,

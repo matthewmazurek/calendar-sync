@@ -28,9 +28,9 @@ on run {input, parameters}
                 set docxArg to quoted form of outPOSIX
                 set calendarName to "mazurek"
                 -- Optional: add --publish flag if you want to auto-publish to git
-                -- set publishFlag to " --publish"
-                set publishFlag to ""
-                set cmd to "cd " & quoted form of projectDir & " && poetry run python ./cli.py sync " & docxArg & " " & calendarName & publishFlag
+                set publishFlag to " --publish"
+                -- set publishFlag to ""
+                set cmd to "cd " & quoted form of projectDir & " && poetry run calendar-sync sync " & docxArg & " " & calendarName & publishFlag
 
                 tell application "Terminal"
                     activate

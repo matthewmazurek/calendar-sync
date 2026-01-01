@@ -119,6 +119,14 @@ def info_command(name: str) -> None:
         print(
             f"{'Latest commit:':<{label_width}} {latest_commit_hash[:7]} {_format_datetime(latest_commit_date)}"
         )
+
+        # Show remote URL if available
+        if calendar_path:
+            subscription_urls = repository.git_publisher.generate_subscription_urls(
+                name, calendar_path, metadata.format
+            )
+            if subscription_urls:
+                print(f"{'Remote URL:':<{label_width}} {subscription_urls[0]}")
     else:
         print()
         print(f"{'Git commits:':<{label_width}} N/A (not in git repository)")

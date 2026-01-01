@@ -14,8 +14,6 @@ from app.config import CalendarConfig
 from cli.commands.git_setup import (
     check_gh_cli_available,
     create_repo_with_gh,
-    detect_source_repo_remote,
-    extract_username_from_remote,
     get_github_username_from_gh,
     git_setup_command,
     write_to_env_file,
@@ -37,59 +35,6 @@ def temp_env_file(tmp_path):
     yield env_file
     if env_file.exists():
         env_file.unlink()
-
-
-def test_extract_username_from_remote_ssh():
-    """Test extracting username from SSH format remote URL."""
-    url = "git@github.com:matthewmazurek/calendar-sync.git"
-    username = extract_username_from_remote(url)
-    assert username == "matthewmazurek"
-
-
-def test_extract_username_from_remote_https():
-    """Test extracting username from HTTPS format remote URL."""
-    url = "https://github.com/matthewmazurek/calendar-sync.git"
-    username = extract_username_from_remote(url)
-    assert username == "matthewmazurek"
-
-    # Without .git suffix
-    url = "https://github.com/matthewmazurek/calendar-sync"
-    username = extract_username_from_remote(url)
-    assert username == "matthewmazurek"
-
-
-def test_extract_username_from_remote_invalid():
-    """Test extracting username from invalid remote URL."""
-    url = "invalid-url"
-    username = extract_username_from_remote(url)
-    assert username is None
-
-
-def test_detect_source_repo_remote(tmp_path, monkeypatch):
-    """Test detecting source repo remote."""
-    # Create a mock git repo
-    git_dir = tmp_path / ".git"
-    git_dir.mkdir()
-    (git_dir / "config").write_text(
-        '[remote "origin"]\n\turl = https://github.com/user/repo.git\n'
-    )
-
-    # Mock subprocess to return the remote URL
-    with patch("subprocess.run") as mock_run:
-        mock_run.return_value = MagicMock(
-            returncode=0, stdout="https://github.com/user/repo.git\n"
-        )
-        monkeypatch.chdir(tmp_path)
-        remote = detect_source_repo_remote()
-        assert remote == "https://github.com/user/repo.git"
-
-
-def test_detect_source_repo_remote_not_found(monkeypatch):
-    """Test detecting source repo remote when not found."""
-    with patch("subprocess.run") as mock_run:
-        mock_run.return_value = MagicMock(returncode=1, stdout="")
-        remote = detect_source_repo_remote()
-        assert remote is None
 
 
 def test_check_gh_cli_available():
@@ -222,7 +167,6 @@ def test_git_setup_command_init_new_repo(tmp_path, monkeypatch):
         os.chdir(tmp_path)
         with patch("cli.commands.git_setup.CalendarConfig.from_env", return_value=config), \
              patch("cli.commands.git_setup.check_gh_cli_available", return_value=False), \
-             patch("cli.commands.git_setup.detect_source_repo_remote", return_value=None), \
              patch("builtins.input", return_value=""):
             git_setup_command()
             # Should have created .git directory
@@ -253,31 +197,6 @@ def test_git_setup_command_with_gh_cli(tmp_path, monkeypatch):
         os.chdir(original_cwd)
 
 
-def test_git_setup_command_with_source_repo_detection(tmp_path, monkeypatch):
-    """Test git-setup with source repo detection."""
-    calendar_dir = tmp_path / "calendars"
-    calendar_dir.mkdir()
-
-    config = CalendarConfig()
-    config.calendar_dir = calendar_dir
-
-    original_cwd = os.getcwd()
-    try:
-        os.chdir(tmp_path)
-        with patch("cli.commands.git_setup.CalendarConfig.from_env", return_value=config), \
-             patch("cli.commands.git_setup.check_gh_cli_available", return_value=False), \
-             patch(
-                 "cli.commands.git_setup.detect_source_repo_remote",
-                 return_value="https://github.com/testuser/calendar-sync.git",
-             ), \
-             patch("builtins.input", return_value="y"):
-            git_setup_command()
-            # Should have created .git directory
-            assert (calendar_dir / ".git").exists()
-    finally:
-        os.chdir(original_cwd)
-
-
 def test_git_setup_command_creates_initial_commit(tmp_path, monkeypatch):
     """Test git-setup creates initial commit if files exist."""
     calendar_dir = tmp_path / "calendars"
@@ -293,7 +212,6 @@ def test_git_setup_command_creates_initial_commit(tmp_path, monkeypatch):
         os.chdir(tmp_path)
         with patch("cli.commands.git_setup.CalendarConfig.from_env", return_value=config), \
              patch("cli.commands.git_setup.check_gh_cli_available", return_value=False), \
-             patch("cli.commands.git_setup.detect_source_repo_remote", return_value=None), \
              patch("builtins.input", return_value=""):
             git_setup_command()
             # Should have created .git directory
