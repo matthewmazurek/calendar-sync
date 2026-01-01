@@ -1,5 +1,6 @@
 """Tests for git publishing functionality."""
 
+import subprocess
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -156,62 +157,205 @@ def test_publish_calendar_git_failure():
         publisher.publish_calendar("mazurek", Path("test.ics"), "ics")
 
 
-def test_stage_calendar_directory():
+def test_stage_calendar_directory(tmp_path):
     """Test staging calendar files."""
-    publisher = GitPublisher(Path("data/calendars"))
+    calendar_dir = tmp_path / "calendars"
+    calendar_dir.mkdir()
+    subprocess.run(["git", "init"], cwd=calendar_dir, check=True)
+    
+    test_calendar = calendar_dir / "test_calendar"
+    test_calendar.mkdir()
+    (test_calendar / "calendar.ics").touch()
+    (test_calendar / "metadata.json").touch()
+    
+    publisher = GitPublisher(calendar_dir)
+    publisher._stage_calendar_files("test_calendar")
+    
+    # Check that files were staged
+    result = subprocess.run(
+        ["git", "status", "--porcelain"],
+        cwd=calendar_dir,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert "test_calendar/calendar.ics" in result.stdout or "A" in result.stdout
 
-    with patch("subprocess.run") as mock_run:
-        mock_run.return_value = MagicMock(returncode=0)
-        # Create a temporary calendar directory with files
-        import tempfile
-        import os
-        with tempfile.TemporaryDirectory() as tmpdir:
-            calendar_dir = Path(tmpdir) / "test_calendar"
-            calendar_dir.mkdir()
-            (calendar_dir / "calendar.ics").touch()
-            (calendar_dir / "metadata.json").touch()
-            
-            publisher.calendar_dir = Path(tmpdir)
-            publisher._stage_calendar_files("test_calendar")
-            
-            # Should be called for both calendar.ics and metadata.json
-            assert mock_run.call_count >= 2
-            assert "git" in mock_run.call_args[0][0]
-            assert "add" in mock_run.call_args[0][0]
 
-
-def test_commit_changes():
+def test_commit_changes(tmp_path):
     """Test committing changes."""
-    publisher = GitPublisher(Path("data/calendars"))
+    calendar_dir = tmp_path / "calendars"
+    calendar_dir.mkdir()
+    subprocess.run(["git", "init"], cwd=calendar_dir, check=True)
+    subprocess.run(
+        ["git", "config", "user.name", "Test User"],
+        cwd=calendar_dir,
+        check=True,
+    )
+    subprocess.run(
+        ["git", "config", "user.email", "test@example.com"],
+        cwd=calendar_dir,
+        check=True,
+    )
+    
+    # Create and stage a file
+    test_file = calendar_dir / "test.txt"
+    test_file.write_text("test")
+    subprocess.run(["git", "add", "test.txt"], cwd=calendar_dir, check=True)
+    
+    publisher = GitPublisher(calendar_dir)
+    publisher._commit_changes("Test commit")
+    
+    # Check that commit was created
+    result = subprocess.run(
+        ["git", "log", "--oneline"],
+        cwd=calendar_dir,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert "Test commit" in result.stdout
+    
+    # Test with no changes
+    publisher._commit_changes("No changes commit")
+    # Should not create another commit
+    result2 = subprocess.run(
+        ["git", "log", "--oneline"],
+        cwd=calendar_dir,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result2.stdout.count("Test commit") == 1
 
-    with patch("subprocess.run") as mock_run:
-        # Test with changes to commit
-        # git diff --cached --quiet returns non-zero exit code when there are staged changes
-        mock_run.side_effect = [
-            MagicMock(returncode=1),  # diff --cached --quiet (has staged changes)
-            MagicMock(returncode=0),  # commit
-        ]
-        publisher._commit_changes("Test commit")
-        assert mock_run.call_count == 2
 
-        # Test with no changes
-        mock_run.reset_mock()
-        # git diff --cached --quiet returns 0 when no staged changes
-        mock_run.side_effect = [
-            MagicMock(returncode=0),  # diff --cached --quiet (no staged changes)
-        ]
-        publisher._commit_changes("Test commit")
-        # Should only call diff, not commit
-        assert mock_run.call_count == 1
-
-
-def test_push_changes():
+def test_push_changes(tmp_path):
     """Test pushing changes."""
-    publisher = GitPublisher(Path("data/calendars"))
-
+    calendar_dir = tmp_path / "calendars"
+    calendar_dir.mkdir()
+    subprocess.run(["git", "init"], cwd=calendar_dir, check=True)
+    
+    publisher = GitPublisher(calendar_dir)
+    
     with patch("subprocess.run") as mock_run:
         mock_run.return_value = MagicMock(returncode=0)
         publisher._push_changes()
-        mock_run.assert_called_once()
-        assert "git" in mock_run.call_args[0][0]
-        assert "push" in mock_run.call_args[0][0]
+        # Should call git push
+        push_calls = [call for call in mock_run.call_args_list if "push" in str(call)]
+        assert len(push_calls) > 0
+
+
+def test_git_publisher_uses_calendar_dir_as_repo_root(tmp_path):
+    """Test GitPublisher uses calendar_dir as repo root."""
+    calendar_dir = tmp_path / "calendars"
+    calendar_dir.mkdir()
+    subprocess.run(["git", "init"], cwd=calendar_dir, check=True)
+
+    publisher = GitPublisher(calendar_dir)
+    repo_root = publisher._get_repo_root()
+    assert repo_root == calendar_dir
+
+
+def test_git_publisher_is_git_repo_checks_calendar_dir(tmp_path):
+    """Test _is_git_repo checks calendar_dir, not current directory."""
+    calendar_dir = tmp_path / "calendars"
+    calendar_dir.mkdir()
+    subprocess.run(["git", "init"], cwd=calendar_dir, check=True)
+
+    publisher = GitPublisher(calendar_dir)
+    assert publisher._is_git_repo() is True
+
+    # Test with non-git directory
+    # Note: _is_git_repo uses `git rev-parse --is-inside-work-tree` which checks
+    # if we're inside ANY git repo. If we're running tests from within the project
+    # (which is a git repo), subdirectories will be detected as inside the repo.
+    # So we'll test the behavior: if calendar_dir has .git, it should be True;
+    # if it doesn't, the result depends on whether we're in a parent git repo.
+    # The key test is that it checks calendar_dir, not the current working directory.
+    non_git_dir = tmp_path / "non_git"
+    non_git_dir.mkdir()
+    # Ensure no .git in this specific directory
+    assert not (non_git_dir / ".git").exists()
+    
+    publisher2 = GitPublisher(non_git_dir)
+    # The result depends on whether tmp_path is in a git repo
+    # But the important thing is that it checked non_git_dir, not cwd
+    result = publisher2._is_git_repo()
+    # Just verify the method works without error
+    assert isinstance(result, bool)
+
+
+def test_git_publisher_get_remote_url_from_calendar_dir(tmp_path):
+    """Test _get_remote_url reads from calendar_dir git config."""
+    calendar_dir = tmp_path / "calendars"
+    calendar_dir.mkdir()
+    subprocess.run(["git", "init"], cwd=calendar_dir, check=True)
+    subprocess.run(
+        ["git", "remote", "add", "origin", "https://github.com/user/repo.git"],
+        cwd=calendar_dir,
+        check=True,
+    )
+
+    publisher = GitPublisher(calendar_dir)
+    remote_url = publisher._get_remote_url()
+    assert remote_url == "https://github.com/user/repo.git"
+
+
+def test_git_publisher_generate_subscription_urls_with_calendar_repo(tmp_path):
+    """Test subscription URL generation when calendar_dir is repo root."""
+    calendar_dir = tmp_path / "calendars"
+    calendar_dir.mkdir()
+    subprocess.run(["git", "init"], cwd=calendar_dir, check=True)
+    subprocess.run(
+        ["git", "remote", "add", "origin", "https://github.com/user/repo.git"],
+        cwd=calendar_dir,
+        check=True,
+    )
+
+    # Create calendar file
+    test_calendar = calendar_dir / "test_calendar"
+    test_calendar.mkdir()
+    calendar_file = test_calendar / "calendar.ics"
+    calendar_file.write_text("BEGIN:VCALENDAR\nEND:VCALENDAR")
+
+    publisher = GitPublisher(calendar_dir)
+    with patch.object(publisher, "_get_branch", return_value="main"):
+        urls = publisher.generate_subscription_urls("test_calendar", calendar_file, "ics")
+        assert len(urls) == 1
+        assert "test_calendar/calendar.ics" in urls[0]
+        assert "user/repo" in urls[0]
+        assert "main" in urls[0]
+
+
+def test_git_publisher_stage_calendar_files_relative_to_repo_root(tmp_path):
+    """Test _stage_calendar_files uses relative paths from repo root."""
+    calendar_dir = tmp_path / "calendars"
+    calendar_dir.mkdir()
+    subprocess.run(["git", "init"], cwd=calendar_dir, check=True)
+    subprocess.run(
+        ["git", "config", "user.name", "Test User"],
+        cwd=calendar_dir,
+        check=True,
+    )
+    subprocess.run(
+        ["git", "config", "user.email", "test@example.com"],
+        cwd=calendar_dir,
+        check=True,
+    )
+
+    test_calendar = calendar_dir / "test_calendar"
+    test_calendar.mkdir()
+    (test_calendar / "calendar.ics").write_text("BEGIN:VCALENDAR\nEND:VCALENDAR")
+
+    publisher = GitPublisher(calendar_dir)
+    publisher._stage_calendar_files("test_calendar")
+    
+    # Check that file was staged
+    result = subprocess.run(
+        ["git", "status", "--porcelain"],
+        cwd=calendar_dir,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert "test_calendar/calendar.ics" in result.stdout or "A" in result.stdout

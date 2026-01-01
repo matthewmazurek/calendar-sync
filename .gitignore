@@ -9,5 +9,5 @@ wheels/
 # Virtual environments
 .venv
 
-# Ignore data directory (calendar files are committed programmatically via force-add)
-/data/
+# Ignore calendar directory (has its own git repository)
+/data/calendars/

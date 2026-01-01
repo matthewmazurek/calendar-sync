@@ -1,4 +1,4 @@
-"""Process calendar data file and create or update calendar."""
+"""Sync calendar data file and create or update calendar."""
 
 import logging
 import sys
@@ -20,7 +20,7 @@ from cli.utils import format_processing_summary
 logger = logging.getLogger(__name__)
 
 
-def processes_command(
+def sync_command(
     calendar_data_file: str,
     calendar_name: str,
     year: int | None = None,
@@ -28,7 +28,7 @@ def processes_command(
     publish: bool = False,
 ) -> None:
     """
-    Process calendar data file and create or update calendar.
+    Sync calendar data file and create or update calendar.
 
     Args:
         calendar_data_file: Path to input calendar file
@@ -117,7 +117,8 @@ def processes_command(
         if publish:
             from app.publish import GitPublisher
 
-            publisher = GitPublisher(config.calendar_dir)
+            remote_url = config.calendar_git_remote_url
+            publisher = GitPublisher(config.calendar_dir, remote_url=remote_url)
             publisher.publish_calendar(calendar_name, filepath, format)
             print("Publishing: Calendar published to git")
     else:
@@ -159,6 +160,7 @@ def processes_command(
         if publish:
             from app.publish import GitPublisher
 
-            publisher = GitPublisher(config.calendar_dir)
+            remote_url = config.calendar_git_remote_url
+            publisher = GitPublisher(config.calendar_dir, remote_url=remote_url)
             publisher.publish_calendar(calendar_name, filepath, format)
             print("Publishing: Calendar published to git")

@@ -23,14 +23,14 @@ on run {input, parameters}
                     end timeout
                 end tell
 
-                -- Run your Python script with the new processes command
+                -- Run your Python script with the sync command
                 set projectDir to "/Users/matthewmazurek/projects/calendar-sync"
                 set docxArg to quoted form of outPOSIX
                 set calendarName to "mazurek"
                 -- Optional: add --publish flag if you want to auto-publish to git
                 -- set publishFlag to " --publish"
                 set publishFlag to ""
-                set cmd to "cd " & quoted form of projectDir & " && poetry run python ./cli.py processes " & docxArg & " " & calendarName & publishFlag
+                set cmd to "cd " & quoted form of projectDir & " && poetry run python ./cli.py sync " & docxArg & " " & calendarName & publishFlag
 
                 tell application "Terminal"
                     activate

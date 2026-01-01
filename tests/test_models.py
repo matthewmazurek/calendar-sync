@@ -103,10 +103,8 @@ def test_calendar_metadata():
         name="test_calendar",
         created=datetime.now(),
         last_updated=datetime.now(),
-        revision_count=0,
     )
     assert metadata.name == "test_calendar"
-    assert metadata.revision_count == 0
 
 
 def test_calendar_with_metadata():

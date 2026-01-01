@@ -58,7 +58,6 @@ class CalendarManager:
             source=None,
             created=now,
             last_updated=now,
-            revision_count=0,
             composed_from=None,
             format="ics",  # Default format
             source_revised_at=source_data.revised_date,  # Extract from Calendar
@@ -118,7 +117,6 @@ class CalendarManager:
             source=existing_metadata.source,
             created=existing_metadata.created,
             last_updated=datetime.now(),
-            revision_count=existing_metadata.revision_count + 1,
             composed_from=existing_metadata.composed_from,
             format=existing_metadata.format,
             source_revised_at=(

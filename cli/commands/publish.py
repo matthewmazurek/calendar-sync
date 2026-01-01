@@ -24,11 +24,18 @@ def publish_command(calendar_name: str, format: str = "ics") -> None:
         sys.exit(1)
 
     # Get latest filepath
-    latest_path = repository.get_latest_calendar_path(calendar_name, format)
+    latest_path = repository.get_calendar_path(calendar_name, format)
     if latest_path is None:
         logger.error(f"No calendar file found for '{calendar_name}'")
         sys.exit(1)
 
-    # Publish
-    publisher = GitPublisher(config.calendar_dir)
+    # Publish - use remote URL from config if available
+    remote_url = config.calendar_git_remote_url
+    publisher = GitPublisher(config.calendar_dir, remote_url=remote_url)
+    
+    # Check if remote is configured
+    if not remote_url and not publisher._get_remote_url():
+        print("Warning: No remote URL configured. Calendar will be committed locally but not pushed.")
+        print("Run 'calendar-sync git-setup' to configure a remote repository.")
+    
     publisher.publish_calendar(calendar_name, latest_path, format)

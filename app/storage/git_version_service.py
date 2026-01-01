@@ -21,9 +21,23 @@ class GitVersionService:
         """
         self.repo_root = repo_root
 
-    def get_file_versions(
-        self, file_path: Path
-    ) -> List[Tuple[str, datetime, str]]:
+    def _get_relative_path(self, path: Path) -> Path:
+        """
+        Get relative path from repo root.
+
+        Args:
+            path: Path to file or directory (relative to repo root or absolute)
+
+        Returns:
+            Relative path from repo root
+        """
+        try:
+            return path.relative_to(self.repo_root)
+        except ValueError:
+            # If path is already relative, use it as-is
+            return path
+
+    def get_file_versions(self, file_path: Path) -> List[Tuple[str, datetime, str]]:
         """
         Get git log for a specific file.
 
@@ -36,12 +50,7 @@ class GitVersionService:
         if not self._is_git_repo():
             return []
 
-        # Get relative path from repo root
-        try:
-            rel_path = file_path.relative_to(self.repo_root)
-        except ValueError:
-            # If file_path is already relative, use it as-is
-            rel_path = file_path
+        rel_path = self._get_relative_path(file_path)
 
         try:
             # Get git log with format: hash|date|message
@@ -104,12 +113,7 @@ class GitVersionService:
             logger.warning("Not in a git repository")
             return False
 
-        # Get relative path from repo root
-        try:
-            rel_path = file_path.relative_to(self.repo_root)
-        except ValueError:
-            # If file_path is already relative, use it as-is
-            rel_path = file_path
+        rel_path = self._get_relative_path(file_path)
 
         try:
             result = subprocess.run(
@@ -144,12 +148,7 @@ class GitVersionService:
             logger.warning("Not in a git repository")
             return False
 
-        # Get relative path from repo root
-        try:
-            rel_path = dir_path.relative_to(self.repo_root)
-        except ValueError:
-            # If dir_path is already relative, use it as-is
-            rel_path = dir_path
+        rel_path = self._get_relative_path(dir_path)
 
         try:
             result = subprocess.run(
@@ -169,9 +168,7 @@ class GitVersionService:
             logger.error(f"Error restoring directory version: {e}")
             return False
 
-    def get_file_at_commit(
-        self, file_path: Path, commit: str
-    ) -> Optional[bytes]:
+    def get_file_at_commit(self, file_path: Path, commit: str) -> Optional[bytes]:
         """
         Get file content at specific commit without checking out.
 
@@ -185,12 +182,7 @@ class GitVersionService:
         if not self._is_git_repo():
             return None
 
-        # Get relative path from repo root
-        try:
-            rel_path = file_path.relative_to(self.repo_root)
-        except ValueError:
-            # If file_path is already relative, use it as-is
-            rel_path = file_path
+        rel_path = self._get_relative_path(file_path)
 
         try:
             result = subprocess.run(
@@ -212,23 +204,18 @@ class GitVersionService:
     def file_matches_head(self, file_path: Path) -> bool:
         """
         Check if file in working directory matches HEAD.
-        
+
         Args:
             file_path: Path to file (relative to repo root or absolute)
-            
+
         Returns:
             True if file matches HEAD, False otherwise
         """
         if not self._is_git_repo():
             return False
-        
-        # Get relative path from repo root
-        try:
-            rel_path = file_path.relative_to(self.repo_root)
-        except ValueError:
-            # If file_path is already relative, use it as-is
-            rel_path = file_path
-        
+
+        rel_path = self._get_relative_path(file_path)
+
         try:
             result = subprocess.run(
                 ["git", "diff", "HEAD", "--quiet", "--", str(rel_path)],
@@ -240,6 +227,51 @@ class GitVersionService:
             return result.returncode == 0
         except Exception:
             return False
+
+    def get_current_commit_hash(self, file_path: Path) -> Optional[str]:
+        """
+        Get the commit hash that the current working file matches.
+
+        If the file has uncommitted changes, returns None.
+        If the file matches a commit, returns that commit hash.
+        When file matches HEAD, returns the latest commit that modified the file
+        (not necessarily HEAD, since HEAD may not have modified this file).
+
+        Args:
+            file_path: Path to file (relative to repo root or absolute)
+
+        Returns:
+            Commit hash if file matches a commit, None if uncommitted changes or not in git
+        """
+        if not self._is_git_repo() or not file_path.exists():
+            return None
+
+        # Fast path: check if file matches HEAD
+        if self.file_matches_head(file_path):
+            # Get versions list - first version is the latest commit that modified this file
+            versions = self.get_file_versions(file_path)
+            if versions:
+                # Return the latest commit that modified this file, not HEAD
+                # (HEAD may not have modified this file)
+                return versions[0][0]
+            return None
+
+        # File doesn't match HEAD - check if it matches any commit
+        # by comparing content
+        try:
+            current_content = file_path.read_bytes()
+            versions = self.get_file_versions(file_path)
+
+            # Check each version to see if content matches
+            for commit_hash, _, _ in versions:
+                commit_content = self.get_file_at_commit(file_path, commit_hash)
+                if commit_content and commit_content == current_content:
+                    return commit_hash
+        except Exception:
+            pass
+
+        # File has uncommitted changes (doesn't match any commit)
+        return None
 
     def _is_git_repo(self) -> bool:
         """Check if repo_root is in a git repository."""

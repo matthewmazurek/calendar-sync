@@ -39,13 +39,13 @@ def format_processing_summary(processing_summary: Dict) -> None:
 
 def format_relative_time(commit_date: datetime) -> str:
     """
-    Format datetime as relative time for recent commits, full datetime for older.
+    Format datetime as relative time for recent commits.
     
     Args:
         commit_date: Datetime to format
         
     Returns:
-        Formatted time string
+        Formatted time string (e.g., "2h ago", "1w ago", "3mo ago", "1y ago")
     """
     if commit_date.tzinfo is None:
         # If no timezone, assume UTC
@@ -65,6 +65,32 @@ def format_relative_time(commit_date: datetime) -> str:
             return f"{hours}h ago"
     elif time_diff.days < 7:
         return f"{time_diff.days}d ago"
+    elif time_diff.days < 30:
+        # Weeks (1-4 weeks)
+        weeks = time_diff.days // 7
+        return f"{weeks}w ago"
+    elif time_diff.days < 365:
+        # Months (1-11 months)
+        months = time_diff.days // 30
+        return f"{months}mo ago"
     else:
-        # Show full date and time for older commits
-        return commit_date.strftime("%Y-%m-%d %H:%M")
+        # Years
+        years = time_diff.days // 365
+        return f"{years}y ago"
+
+
+def format_file_size(size_bytes: int) -> str:
+    """
+    Format file size in human-readable format.
+    
+    Args:
+        size_bytes: File size in bytes
+        
+    Returns:
+        Formatted size string (e.g., "1.5KB", "2.3MB")
+    """
+    for unit in ['B', 'KB', 'MB', 'GB']:
+        if size_bytes < 1024.0:
+            return f"{size_bytes:.1f}{unit}"
+        size_bytes /= 1024.0
+    return f"{size_bytes:.1f}TB"

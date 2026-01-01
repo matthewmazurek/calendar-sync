@@ -107,19 +107,32 @@ class GitPublisher:
         # Get branch name
         branch = self._get_branch()
 
-        # URL for calendar file
+        # URL for calendar file - calendar_dir is the repo root, so path is relative to it
+        # Get relative path from repo root
+        repo_root = self._get_repo_root()
+        if repo_root:
+            calendar_file = self.calendar_dir / calendar_name / f"calendar.{format}"
+            try:
+                rel_path = calendar_file.relative_to(repo_root)
+            except ValueError:
+                # If path is not relative, use default structure
+                rel_path = Path(calendar_name) / f"calendar.{format}"
+        else:
+            rel_path = Path(calendar_name) / f"calendar.{format}"
+
         calendar_url = (
             f"https://raw.githubusercontent.com/{owner}/{repo}/{branch}/"
-            f"data/calendars/{calendar_name}/calendar.{format}"
+            f"{rel_path.as_posix()}"
         )
 
         return [calendar_url]
 
     def _is_git_repo(self) -> bool:
-        """Check if current directory is a git repository."""
+        """Check if calendar_dir is a git repository."""
         try:
             result = subprocess.run(
                 ["git", "rev-parse", "--is-inside-work-tree"],
+                cwd=self.calendar_dir,
                 capture_output=True,
                 text=True,
                 check=False,
@@ -133,6 +146,7 @@ class GitPublisher:
         try:
             result = subprocess.run(
                 ["git", "config", "--get", "remote.origin.url"],
+                cwd=self.calendar_dir,
                 capture_output=True,
                 text=True,
                 check=False,
@@ -148,6 +162,7 @@ class GitPublisher:
         try:
             result = subprocess.run(
                 ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+                cwd=self.calendar_dir,
                 capture_output=True,
                 text=True,
                 check=False,
@@ -187,20 +202,26 @@ class GitPublisher:
 
     def _stage_calendar_files(self, calendar_name: str) -> None:
         """
-        Stage specific calendar files for commit (force-add to bypass .gitignore).
+        Stage specific calendar files for commit.
 
         Args:
             calendar_name: Name of the calendar to stage
         """
         try:
             calendar_dir = self.calendar_dir / calendar_name
+            repo_root = self._get_repo_root()
+            if not repo_root:
+                raise Exception("Could not determine git repo root")
 
             # Stage calendar file (could be .ics or .json)
             for ext in ["ics", "json"]:
                 calendar_file = calendar_dir / f"calendar.{ext}"
                 if calendar_file.exists():
+                    # Get relative path from repo root
+                    rel_path = calendar_file.relative_to(repo_root)
                     subprocess.run(
-                        ["git", "add", "-f", str(calendar_file)],
+                        ["git", "add", str(rel_path)],
+                        cwd=repo_root,
                         check=True,
                         capture_output=True,
                     )
@@ -208,8 +229,10 @@ class GitPublisher:
             # Stage metadata file
             metadata_file = calendar_dir / "metadata.json"
             if metadata_file.exists():
+                rel_path = metadata_file.relative_to(repo_root)
                 subprocess.run(
-                    ["git", "add", "-f", str(metadata_file)],
+                    ["git", "add", str(rel_path)],
+                    cwd=repo_root,
                     check=True,
                     capture_output=True,
                 )
@@ -219,9 +242,14 @@ class GitPublisher:
     def _commit_changes(self, message: str) -> None:
         """Commit staged changes."""
         try:
+            repo_root = self._get_repo_root()
+            if not repo_root:
+                raise Exception("Could not determine git repo root")
+
             # Check if there are staged changes to commit
             result = subprocess.run(
                 ["git", "diff", "--cached", "--quiet"],
+                cwd=repo_root,
                 capture_output=True,
                 check=False,
             )
@@ -232,6 +260,7 @@ class GitPublisher:
 
             subprocess.run(
                 ["git", "commit", "-m", message],
+                cwd=repo_root,
                 check=True,
                 capture_output=True,
             )
@@ -241,8 +270,13 @@ class GitPublisher:
     def _push_changes(self) -> None:
         """Push committed changes to remote."""
         try:
+            repo_root = self._get_repo_root()
+            if not repo_root:
+                raise Exception("Could not determine git repo root")
+
             subprocess.run(
                 ["git", "push"],
+                cwd=repo_root,
                 check=True,
                 capture_output=True,
             )
@@ -426,18 +460,10 @@ class GitPublisher:
     def _get_repo_root(self) -> Optional[Path]:
         """Get git repository root directory."""
         try:
-            # Try from calendar_dir first (if it's absolute and exists)
-            if self.calendar_dir.is_absolute() and self.calendar_dir.exists():
-                cwd = self.calendar_dir
-            else:
-                # Otherwise use current working directory
-                import os
-
-                cwd = Path(os.getcwd())
-
+            # Use calendar_dir as the base - it should be the repo root
             result = subprocess.run(
                 ["git", "rev-parse", "--show-toplevel"],
-                cwd=cwd,
+                cwd=self.calendar_dir,
                 capture_output=True,
                 text=True,
                 check=False,

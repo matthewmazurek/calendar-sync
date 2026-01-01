@@ -1,5 +1,6 @@
 """Tests for processing layer with Pydantic models."""
 
+import subprocess
 from datetime import date, datetime, time
 from pathlib import Path
 import tempfile
@@ -79,6 +80,19 @@ def test_source_revised_at_extraction():
     """Test that source_revised_at is extracted from source Calendar."""
     temp_dir = Path(tempfile.mkdtemp())
     try:
+        # Initialize git repo
+        subprocess.run(["git", "init"], cwd=temp_dir, check=True)
+        subprocess.run(
+            ["git", "config", "user.name", "Test User"],
+            cwd=temp_dir,
+            check=True,
+        )
+        subprocess.run(
+            ["git", "config", "user.email", "test@example.com"],
+            cwd=temp_dir,
+            check=True,
+        )
+        
         config = CalendarConfig()
         config.calendar_dir = temp_dir
         storage = CalendarStorage(config)

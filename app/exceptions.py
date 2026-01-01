@@ -35,3 +35,9 @@ class IngestionError(CalendarError):
     """Error during calendar ingestion."""
 
     pass
+
+
+class CalendarGitRepoNotFoundError(CalendarError):
+    """Calendar git repository not found."""
+
+    pass

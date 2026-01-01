@@ -15,7 +15,6 @@ class CalendarMetadata(BaseModel):
     source: Optional[str] = None
     created: datetime
     last_updated: datetime
-    revision_count: int = 0
     composed_from: Optional[List[str]] = None
     format: str = "ics"  # "ics" or "json"
     source_revised_at: Optional[date] = None
