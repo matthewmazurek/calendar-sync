@@ -1,0 +1,258 @@
+"""Git publishing operations for calendar sync."""
+
+import logging
+import re
+import subprocess
+import sys
+from pathlib import Path
+from typing import List, Optional, Tuple
+
+logger = logging.getLogger(__name__)
+
+
+def log_warning(message: str) -> None:
+    """Log warning and print to stderr."""
+    logger.warning(message)
+    print(f"Warning: {message}", file=sys.stderr)
+
+
+class GitPublisher:
+    """Handles git operations for publishing calendars."""
+
+    def __init__(self, calendar_dir: Path, remote_url: Optional[str] = None):
+        """
+        Initialize GitPublisher.
+
+        Args:
+            calendar_dir: Directory containing calendars
+            remote_url: Optional remote URL override for subscription URLs
+        """
+        self.calendar_dir = calendar_dir
+        self.remote_url = remote_url
+
+    def commit_calendar_locally(
+        self, calendar_name: str
+    ) -> None:
+        """
+        Commit calendar changes locally (stage and commit, but don't push).
+
+        Args:
+            calendar_name: Name of the calendar
+        """
+        if not self._is_git_repo():
+            logger.debug("Not in a git repository, skipping local commit")
+            return
+
+        try:
+            # Stage specific calendar files (force-add to bypass .gitignore)
+            self._stage_calendar_files(calendar_name)
+
+            # Commit changes
+            commit_message = f"Update calendar: {calendar_name}"
+            self._commit_changes(commit_message)
+        except Exception as e:
+            log_warning(f"Local git commit failed: {e}")
+            logger.debug("Calendar saved but local commit failed")
+
+    def publish_calendar(
+        self, calendar_name: str, filepath: Path, format: str = "ics"
+    ) -> None:
+        """
+        Publish a calendar to git (stage, commit, push).
+
+        Args:
+            calendar_name: Name of the calendar
+            filepath: Path to the calendar file that was saved
+            format: Calendar format (ics or json)
+        """
+        if not self._is_git_repo():
+            log_warning("Not in a git repository, skipping git operations")
+            return
+
+        try:
+            # Commit locally first (if not already committed)
+            self.commit_calendar_locally(calendar_name)
+
+            # Push to remote
+            self._push_changes()
+
+            # Generate and display subscription URLs
+            urls = self.generate_subscription_urls(calendar_name, filepath, format)
+            if urls:
+                print("Calendar subscription URLs:")
+                for url in urls:
+                    print(f"  {url}")
+            else:
+                print("Subscription URLs not available (could not determine remote)")
+
+        except Exception as e:
+            log_warning(f"Git operation failed: {e}")
+            print("Calendar saved but git operations failed", file=sys.stderr)
+
+    def generate_subscription_urls(
+        self, calendar_name: str, filepath: Path, format: str
+    ) -> List[str]:
+        """
+        Generate GitHub raw URLs for calendar subscription.
+
+        Args:
+            calendar_name: Name of the calendar
+            filepath: Path to the calendar file
+            format: Calendar format (ics or json)
+
+        Returns:
+            List of subscription URLs (single URL for calendar.{ext})
+        """
+        remote_url = self.remote_url or self._get_remote_url()
+        if not remote_url:
+            return []
+
+        # Parse remote URL to extract owner/repo
+        owner, repo = self._parse_remote_url(remote_url)
+        if not owner or not repo:
+            return []
+
+        # Get branch name
+        branch = self._get_branch()
+
+        # URL for calendar file
+        calendar_url = (
+            f"https://raw.githubusercontent.com/{owner}/{repo}/{branch}/"
+            f"data/calendars/{calendar_name}/calendar.{format}"
+        )
+
+        return [calendar_url]
+
+    def _is_git_repo(self) -> bool:
+        """Check if current directory is a git repository."""
+        try:
+            result = subprocess.run(
+                ["git", "rev-parse", "--is-inside-work-tree"],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            return result.returncode == 0 and result.stdout.strip() == "true"
+        except Exception:
+            return False
+
+    def _get_remote_url(self) -> Optional[str]:
+        """Get remote URL from git config."""
+        try:
+            result = subprocess.run(
+                ["git", "config", "--get", "remote.origin.url"],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            if result.returncode == 0:
+                return result.stdout.strip()
+        except Exception:
+            pass
+        return None
+
+    def _get_branch(self) -> str:
+        """Get current branch name."""
+        try:
+            result = subprocess.run(
+                ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            if result.returncode == 0:
+                branch = result.stdout.strip()
+                if branch:
+                    return branch
+        except Exception:
+            pass
+        # Default to master or main
+        return "master"
+
+    def _parse_remote_url(self, remote_url: str) -> Tuple[Optional[str], Optional[str]]:
+        """
+        Parse remote URL to extract owner and repo.
+
+        Supports:
+        - git@github.com:owner/repo.git
+        - https://github.com/owner/repo.git
+        - https://github.com/owner/repo
+        """
+        # Remove .git suffix if present
+        url = remote_url.rstrip(".git")
+
+        # Handle SSH format: git@github.com:owner/repo
+        ssh_match = re.match(r"git@github\.com:(.+?)/(.+?)$", url)
+        if ssh_match:
+            return ssh_match.group(1), ssh_match.group(2)
+
+        # Handle HTTPS format: https://github.com/owner/repo
+        https_match = re.match(r"https?://github\.com/(.+?)/(.+?)$", url)
+        if https_match:
+            return https_match.group(1), https_match.group(2)
+
+        return None, None
+
+    def _stage_calendar_files(self, calendar_name: str) -> None:
+        """
+        Stage specific calendar files for commit (force-add to bypass .gitignore).
+        
+        Args:
+            calendar_name: Name of the calendar to stage
+        """
+        try:
+            calendar_dir = self.calendar_dir / calendar_name
+            
+            # Stage calendar file (could be .ics or .json)
+            for ext in ["ics", "json"]:
+                calendar_file = calendar_dir / f"calendar.{ext}"
+                if calendar_file.exists():
+                    subprocess.run(
+                        ["git", "add", "-f", str(calendar_file)],
+                        check=True,
+                        capture_output=True,
+                    )
+            
+            # Stage metadata file
+            metadata_file = calendar_dir / "metadata.json"
+            if metadata_file.exists():
+                subprocess.run(
+                    ["git", "add", "-f", str(metadata_file)],
+                    check=True,
+                    capture_output=True,
+                )
+        except subprocess.CalledProcessError as e:
+            raise Exception(f"Failed to stage calendar files: {e}")
+
+    def _commit_changes(self, message: str) -> None:
+        """Commit staged changes."""
+        try:
+            # Check if there are staged changes to commit
+            result = subprocess.run(
+                ["git", "diff", "--cached", "--quiet"],
+                capture_output=True,
+                check=False,
+            )
+            # Exit code 0 means no staged changes
+            if result.returncode == 0:
+                logger.info("No calendar changes to commit")
+                return
+
+            subprocess.run(
+                ["git", "commit", "-m", message],
+                check=True,
+                capture_output=True,
+            )
+        except subprocess.CalledProcessError as e:
+            raise Exception(f"Failed to commit changes: {e}")
+
+    def _push_changes(self) -> None:
+        """Push committed changes to remote."""
+        try:
+            subprocess.run(
+                ["git", "push"],
+                check=True,
+                capture_output=True,
+            )
+        except subprocess.CalledProcessError as e:
+            raise Exception(f"Failed to push changes: {e}")

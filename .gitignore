@@ -9,5 +9,5 @@ wheels/
 # Virtual environments
 .venv
 
-# Ignore all files in data/ and subdirectories
-/data/*
+# Ignore data directory (calendar files are committed programmatically via force-add)
+/data/

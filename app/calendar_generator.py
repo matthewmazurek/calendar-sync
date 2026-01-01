@@ -36,7 +36,7 @@ def generate_ical(events: List[Dict]) -> Calendar:
         event.add("dtstamp", datetime.now())
 
         # Add location if present
-        if "location" in event_dict:
+        if "location" in event_dict and event_dict["location"] is not None:
             event.add("location", event_dict["location"])
             # Normalize LOCATION property
             event["LOCATION"] = event_dict["location"]

@@ -33,6 +33,36 @@ def are_consecutive_dates(date1: str, date2: str) -> bool:
     return (d2 - d1).days == 1
 
 
+def is_weekend_stretch(stretch_dates: List[str]) -> bool:
+    """
+    Check if a stretch of dates is a weekend stretch (Friday-Sunday).
+
+    Args:
+        stretch_dates: List of date strings in YYYY-MM-DD format
+
+    Returns:
+        True if the stretch starts on Friday and includes Saturday and/or Sunday
+    """
+    if not stretch_dates:
+        return False
+
+    first_date = datetime.strptime(stretch_dates[0], "%Y-%m-%d")
+    first_weekday = first_date.weekday()  # Monday=0, Friday=4, Sunday=6
+
+    # Check if it starts on Friday (weekday == 4)
+    if first_weekday != 4:
+        return False
+
+    # Check if it includes Saturday (weekday == 5) or Sunday (weekday == 6)
+    for date_str in stretch_dates:
+        date_obj = datetime.strptime(date_str, "%Y-%m-%d")
+        weekday = date_obj.weekday()
+        if weekday in [5, 6]:  # Saturday or Sunday
+            return True
+
+    return False
+
+
 def is_overnight_event(event: Dict) -> bool:
     """Check if an event is an overnight event (end time is earlier than start time, or same time)."""
     if "start" not in event or "end" not in event:
@@ -154,15 +184,21 @@ def consolidate_oncall_events(events: List[Dict]) -> List[Dict]:
                 first_event["end_date"] = stretch_dates[-1]
                 first_event.pop("start", None)
                 first_event.pop("end", None)
+                # Restore original title if this was a processed overnight event
+                if "_oncall_type" in first_event:
+                    oncall_type = first_event["_oncall_type"]
+                    first_event["title"] = f"{oncall_type.title()} on call"
                 first_event.pop("_oncall_type", None)
                 first_event.pop("_time_range", None)
                 consolidated.append(first_event)
                 # Output each overnight event as a separate all-day event
-                for overnight_event in overnight_in_stretch:
-                    oe = overnight_event.copy()
-                    oe.pop("_oncall_type", None)
-                    oe.pop("_time_range", None)
-                    consolidated.append(oe)
+                # Skip individual overnight events for weekend stretches (Friday-Sunday)
+                if not is_weekend_stretch(stretch_dates):
+                    for overnight_event in overnight_in_stretch:
+                        oe = overnight_event.copy()
+                        oe.pop("_oncall_type", None)
+                        oe.pop("_time_range", None)
+                        consolidated.append(oe)
             start_idx = end_idx + 1
 
     # Consolidate all-day non-on-call events by title

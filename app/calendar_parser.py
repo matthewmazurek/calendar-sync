@@ -1,10 +1,12 @@
-import json
 import os
 import re
+import shutil
 import subprocess
+import tempfile
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional
+from pathlib import Path
 
 from docx import Document
 
@@ -27,7 +29,6 @@ MONTH_MAP = {
 }
 
 # --- Helper Functions --------------------------------------------------------
-
 
 def extract_year_from_header(header: str) -> Optional[int]:
     """
@@ -79,14 +80,22 @@ def parse_cell_events(cell_text: str, month: int, year: int) -> List[Dict]:
             ev = part.strip()
             if not ev:
                 continue
-            # If there's a time range like "Endo 1230-1630"
-            m_time = re.match(r"(.+?)\s+(\d{4})-(\d{4})$", ev)
+            # If there's a time range like "Endo 1230-1630" or "Clinic 1230-1630 with Carmen"
+            # Handle 4-digit time format and allow additional text after time
+            m_time = re.match(r"(.+?)\s+(\d{4})-(\d{4})(?:\s+(.+))?", ev)
             if m_time:
                 title = m_time.group(1).strip()
                 start = m_time.group(2)
                 end = m_time.group(3)
+                additional_text = m_time.group(4) if m_time.group(4) else ""
+                
+                # Build title with additional text if present
+                full_title = title
+                if additional_text:
+                    full_title = f"{title} ({additional_text.strip()})"
+                
                 events.append(
-                    {"title": title, "start": start, "end": end, "date": date_str}
+                    {"title": full_title, "start": start, "end": end, "date": date_str}
                 )
             else:
                 # All-day or untimed event
@@ -103,20 +112,36 @@ def normalize_to_docx(path: str | Path) -> str:
     path = str(path)
     root, ext = os.path.splitext(path)
     if ext.lower() == ".doc":
-        # LibreOffice will produce root + '.docx' beside it
-        subprocess.run(
-            [
-                "soffice",
-                "--headless",
-                "--convert-to",
-                "docx",
-                "--outdir",
-                os.path.dirname(path),
-                path,
-            ],
-            check=True,
-        )
-        return root + ".docx"
+        # Create a temporary directory for the conversion
+        with tempfile.TemporaryDirectory() as temp_dir:
+            # Copy the .doc file to the temp directory
+            temp_doc = os.path.join(temp_dir, os.path.basename(path))
+            shutil.copy2(path, temp_doc)
+
+            # Convert in the temp directory
+            subprocess.run(
+                [
+                    "soffice",
+                    "--headless",
+                    "--convert-to",
+                    "docx",
+                    "--outdir",
+                    temp_dir,
+                    temp_doc,
+                ],
+                check=True,
+            )
+
+            # Get the path of the converted file
+            temp_docx = os.path.splitext(temp_doc)[0] + ".docx"
+
+            # Create a new temporary file for the docx
+            with tempfile.NamedTemporaryFile(
+                suffix=".docx", delete=False
+            ) as final_docx:
+                # Copy the converted file to the final location
+                shutil.copy2(temp_docx, final_docx.name)
+                return final_docx.name
     elif ext.lower() == ".docx":
         return path
     else:
@@ -131,7 +156,15 @@ def parse_word_events(word_path: str | Path) -> List[Dict]:
     Parse a word file (.doc or .docx) containing a calendar into a list of events.
     """
     docx_path = normalize_to_docx(word_path)
-    return parse_docx_events(docx_path)
+    try:
+        return parse_docx_events(docx_path)
+    finally:
+        # Clean up temporary docx file if it was created by normalize_to_docx
+        if docx_path != word_path:
+            try:
+                os.unlink(docx_path)
+            except OSError:
+                pass  # Ignore errors during cleanup
 
 
 def parse_docx_events(docx_path: str | Path) -> List[Dict]:

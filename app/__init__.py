@@ -1,17 +1,38 @@
 import os
 import tempfile
 
-from docx.opc.exceptions import PackageNotFoundError
-from flask import Flask, Response, jsonify, request
+try:
+    from docx.opc.exceptions import PackageNotFoundError
+except ImportError:
+    PackageNotFoundError = Exception  # Fallback if docx not installed
 
-from .calendar_generator import generate_ical
-from .calendar_parser import parse_word_events
-from .calendar_storage import save_calendar
-from .event_processor import process_events
+try:
+    from flask import Flask, Response, jsonify, request
+except ImportError:
+    Flask = None  # Fallback if flask not installed
+
+# Lazy imports to avoid dependency issues
+def _get_legacy_imports():
+    """Get legacy imports if available."""
+    try:
+        from .calendar_generator import generate_ical
+        from .calendar_parser import parse_word_events
+        from .calendar_storage import save_calendar
+        from .event_processor import process_events
+        return generate_ical, parse_word_events, save_calendar, process_events
+    except ImportError:
+        return None, None, None, None
 
 
 def create_app():
+    if Flask is None:
+        raise ImportError("Flask is required for create_app()")
+    
     app = Flask(__name__)
+    generate_ical, parse_word_events, save_calendar, process_events = _get_legacy_imports()
+    
+    if None in (generate_ical, parse_word_events, save_calendar, process_events):
+        raise ImportError("Legacy calendar modules are required for create_app()")
 
     @app.route("/inbound", methods=["POST"])
     def inbound():
@@ -69,7 +90,7 @@ def create_app():
         return Response(
             ical_content,
             content_type="text/calendar; charset=utf-8",
-            headers={"Content-Disposition": "attachment; filename=latest-calendar.ics"},
+            headers={"Content-Disposition": "attachment; filename=calendar.ics"},
         )
 
     return app

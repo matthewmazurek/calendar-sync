@@ -4,41 +4,34 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional
 
-from flask import current_app
-
 # Default calendar directory
 DEFAULT_CALENDAR_DIR = Path("data/calendars")
 # Default retention period in days
-DEFAULT_RETENTION_DAYS = 30
+DEFAULT_RETENTION_DAYS = 365
 
 
-def get_calendar_dir() -> Path:
-    """Get the calendar directory from config or use default."""
-    return Path(current_app.config.get("CALENDAR_DIR", DEFAULT_CALENDAR_DIR))
-
-
-def get_retention_days() -> int:
-    """Get the retention period from config or use default."""
-    return current_app.config.get("CALENDAR_RETENTION_DAYS", DEFAULT_RETENTION_DAYS)
-
-
-def ensure_calendar_dir():
-    """Ensure the calendar directory exists."""
-    get_calendar_dir().mkdir(parents=True, exist_ok=True)
-
-
-def save_calendar(ical_content: bytes) -> str:
+def save_calendar(ical_content: bytes, path: str | None = None) -> str:
     """
     Save a calendar file with timestamp and return the filename.
 
     Args:
         ical_content: The iCalendar content as bytes
+        path: The path to save the calendar file, if not provided, the calendar will be saved in the default calendar directory
 
     Returns:
         The filename of the saved calendar
     """
-    ensure_calendar_dir()
-    calendar_dir = get_calendar_dir()
+    # Use provided path or default directory
+    if path:
+        output_path = Path(path)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(output_path, "wb") as f:
+            f.write(ical_content)
+        return path
+
+    # If no path provided, use default directory with timestamp
+    calendar_dir = DEFAULT_CALENDAR_DIR
+    calendar_dir.mkdir(parents=True, exist_ok=True)
 
     # Generate filename with timestamp
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -56,31 +49,17 @@ def save_calendar(ical_content: bytes) -> str:
     shutil.copy2(filepath, latest_path)
 
     # Clean up old files
-    cleanup_old_calendars()
+    cleanup_old_calendars(calendar_dir)
 
     return filename
 
 
-def get_latest_calendar() -> Optional[bytes]:
-    """
-    Get the content of the latest calendar file.
-
-    Returns:
-        The calendar content as bytes, or None if no calendar exists
-    """
-    latest_path = get_calendar_dir() / "latest-calendar.ics"
-    if not latest_path.exists():
-        return None
-
-    with open(latest_path, "rb") as f:
-        return f.read()
-
-
-def cleanup_old_calendars():
+def cleanup_old_calendars(calendar_dir: Path = DEFAULT_CALENDAR_DIR):
     """Remove calendar files older than the retention period."""
-    calendar_dir = get_calendar_dir()
-    retention_days = get_retention_days()
-    cutoff_date = datetime.now() - timedelta(days=retention_days)
+    if not calendar_dir.exists():
+        return
+
+    cutoff_date = datetime.now() - timedelta(days=DEFAULT_RETENTION_DAYS)
 
     for file in calendar_dir.glob("calendar_*.ics"):
         try:
