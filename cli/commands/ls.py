@@ -3,6 +3,8 @@
 from app.config import CalendarConfig
 from app.storage.calendar_repository import CalendarRepository
 from app.storage.calendar_storage import CalendarStorage
+from app.storage.git_service import GitService
+from cli.setup import setup_reader_registry
 from cli.utils import format_file_size, format_relative_time
 
 
@@ -28,7 +30,14 @@ def ls_command(
     """
     config = CalendarConfig.from_env()
     storage = CalendarStorage(config)
-    repository = CalendarRepository(config.calendar_dir, storage)
+    reader_registry = setup_reader_registry()
+    git_service = GitService(
+        config.calendar_dir,
+        remote_url=config.calendar_git_remote_url,
+    )
+    repository = CalendarRepository(
+        config.calendar_dir, storage, git_service, reader_registry
+    )
 
     if name is None:
         # List all calendars

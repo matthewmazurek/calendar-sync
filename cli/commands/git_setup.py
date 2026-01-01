@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Optional, Tuple
 
 from app.config import CalendarConfig
-from app.storage.git_version_service import GitVersionService
+from app.storage.git_service import GitService
 
 logger = logging.getLogger(__name__)
 
@@ -31,7 +31,7 @@ def git_setup_command(delete: bool = False) -> None:
     # Check if git repo already exists
     if (calendar_dir / ".git").exists():
         # Check if remote is configured
-        git_service = GitVersionService(calendar_dir)
+        git_service = GitService(calendar_dir)
         remote_url = git_service.get_remote_url()
         if remote_url:
             print(f"Git repository already exists in {calendar_dir}")
@@ -230,7 +230,7 @@ def delete_git_repository(calendar_dir: Path) -> None:
         return
 
     # Get remote URL if it exists
-    git_service = GitVersionService(calendar_dir)
+    git_service = GitService(calendar_dir)
     remote_url = git_service.get_remote_url()
 
     # Show what will be deleted

@@ -7,6 +7,9 @@ from datetime import date, datetime, timezone
 from app.config import CalendarConfig
 from app.storage.calendar_repository import CalendarRepository
 from app.storage.calendar_storage import CalendarStorage
+from app.storage.git_service import GitService
+from app.storage.subscription_url_generator import SubscriptionUrlGenerator
+from cli.setup import setup_reader_registry
 from cli.utils import format_relative_time
 
 logger = logging.getLogger(__name__)
@@ -37,7 +40,14 @@ def info_command(name: str) -> None:
     """Display calendar info and event count."""
     config = CalendarConfig.from_env()
     storage = CalendarStorage(config)
-    repository = CalendarRepository(config.calendar_dir, storage)
+    reader_registry = setup_reader_registry()
+    git_service = GitService(
+        config.calendar_dir,
+        remote_url=config.calendar_git_remote_url,
+    )
+    repository = CalendarRepository(
+        config.calendar_dir, storage, git_service, reader_registry
+    )
 
     calendar_with_metadata = repository.load_calendar(name)
     if calendar_with_metadata is None:
@@ -122,7 +132,10 @@ def info_command(name: str) -> None:
 
         # Show remote URL if available
         if calendar_path:
-            subscription_urls = repository.git_publisher.generate_subscription_urls(
+            url_generator = SubscriptionUrlGenerator(
+                git_service.repo_root, git_service.remote_url
+            )
+            subscription_urls = url_generator.generate_subscription_urls(
                 name, calendar_path, metadata.format
             )
             if subscription_urls:

@@ -1,94 +1,42 @@
 """Calendar repository for managing named calendars."""
 
 import json
-import subprocess
 from datetime import datetime
 from pathlib import Path
 from typing import List, Optional, Tuple
 
-from app.exceptions import CalendarGitRepoNotFoundError, CalendarNotFoundError
+from app.exceptions import CalendarNotFoundError
 from app.ingestion.base import ReaderRegistry
-from app.ingestion.ics_reader import ICSReader
-from app.ingestion.json_reader import JSONReader
 from app.models.calendar import Calendar
 from app.models.metadata import CalendarMetadata, CalendarWithMetadata
 from app.output.base import CalendarWriter
-from app.publish import GitPublisher
 from app.storage.calendar_storage import CalendarStorage
-from app.storage.git_version_service import GitVersionService
+from app.storage.git_service import GitService
 
 
 class CalendarRepository:
     """Repository for managing named calendars with dependency injection."""
 
-    def __init__(self, calendar_dir: Path, storage: CalendarStorage):
+    def __init__(
+        self,
+        calendar_dir: Path,
+        storage: CalendarStorage,
+        git_service: GitService,
+        reader_registry: ReaderRegistry,
+    ):
         """
         Initialize repository.
 
         Args:
             calendar_dir: Base directory for calendars
             storage: CalendarStorage instance (dependency injection)
+            git_service: GitService instance (dependency injection)
+            reader_registry: ReaderRegistry instance (dependency injection)
         """
         self.calendar_dir = calendar_dir
         self.storage = storage
-
-        # Initialize reader registry
-        self.reader_registry = ReaderRegistry()
-        self.reader_registry.register(ICSReader(), [".ics"])
-        self.reader_registry.register(JSONReader(), [".json"])
-
-        # Initialize git version service - check if calendar_dir itself is a git repo
-        # First check if calendar_dir/.git exists (normal repo)
-        if (calendar_dir / ".git").exists():
-            repo_root = calendar_dir
-        elif calendar_dir.exists():
-            # Check if we're inside a git worktree or if calendar_dir is a git repo
-            # Try to detect if calendar_dir is the repo root
-            try:
-                result = subprocess.run(
-                    ["git", "rev-parse", "--show-toplevel"],
-                    cwd=calendar_dir,
-                    capture_output=True,
-                    text=True,
-                    check=False,
-                )
-                if result.returncode == 0:
-                    detected_root = Path(result.stdout.strip())
-                    # If detected root is calendar_dir, use it
-                    if detected_root.resolve() == calendar_dir.resolve():
-                        repo_root = calendar_dir
-                    else:
-                        # Calendar dir is inside another repo, raise error
-                        raise CalendarGitRepoNotFoundError(
-                            f"Calendar git repository not found in {calendar_dir}. "
-                            f"Run 'calendar-sync git-setup' to initialize it."
-                        )
-                else:
-                    # Not in a git repo
-                    raise CalendarGitRepoNotFoundError(
-                        f"Calendar git repository not found in {calendar_dir}. "
-                        f"Run 'calendar-sync git-setup' to initialize it."
-                    )
-            except CalendarGitRepoNotFoundError:
-                raise
-            except Exception:
-                # If git command fails, assume no repo
-                raise CalendarGitRepoNotFoundError(
-                    f"Calendar git repository not found in {calendar_dir}. "
-                    f"Run 'calendar-sync git-setup' to initialize it."
-                )
-        else:
-            # Calendar dir doesn't exist yet, will be created on first use
-            # We'll use calendar_dir as repo root, but it will need to be initialized
-            # Don't raise error here - allow directory to be created first
-            repo_root = calendar_dir
-
-        self.git_service = GitVersionService(repo_root)
-        # Get remote URL from config if available
-        remote_url = None
-        if hasattr(storage, "config") and storage.config:
-            remote_url = getattr(storage.config, "calendar_git_remote_url", None)
-        self.git_publisher = GitPublisher(calendar_dir, remote_url=remote_url)
+        self.git_service = git_service
+        self.reader_registry = reader_registry
 
     def _get_calendar_dir(self, name: str) -> Path:
         """Get directory for named calendar."""
@@ -186,7 +134,7 @@ class CalendarRepository:
             # Clean up temp file
             try:
                 tmp_path.unlink()
-            except Exception:
+            except OSError:
                 pass
 
     def save_calendar(
@@ -219,7 +167,7 @@ class CalendarRepository:
         self.save_metadata(metadata)
 
         # Commit locally for versioning (always commit, even without --publish)
-        self.git_publisher.commit_calendar_locally(metadata.name)
+        self.git_service.commit_calendar_locally(metadata.name)
 
         return filepath
 
@@ -237,12 +185,12 @@ class CalendarRepository:
         if not metadata_path.exists():
             return None
 
-        try:
-            with open(metadata_path, "r", encoding="utf-8") as f:
-                data = json.load(f)
-            return CalendarMetadata(**data)
-        except Exception:
-            return None
+            try:
+                with open(metadata_path, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                return CalendarMetadata(**data)
+            except (OSError, ValueError, KeyError):
+                return None
 
     def list_calendars(self, include_deleted: bool = False) -> List[str]:
         """
@@ -268,8 +216,7 @@ class CalendarRepository:
             try:
                 # Get all calendar files that ever existed in git history
                 # Use --all to check all branches, and --name-only to get file paths
-                # Calendar repo root is calendar_dir itself
-                result = subprocess.run(
+                result = self.git_service.git_client.run_command(
                     [
                         "git",
                         "log",
@@ -279,10 +226,7 @@ class CalendarRepository:
                         "--",
                         ".",
                     ],
-                    cwd=self.git_service.repo_root,
-                    capture_output=True,
-                    text=True,
-                    check=False,
+                    self.git_service.repo_root,
                 )
 
                 # Extract calendar names from paths like "name/calendar.ics" (relative to calendar_dir)
@@ -298,7 +242,7 @@ class CalendarRepository:
                             calendar_name = parts[0]
                             if calendar_name and not calendar_name.startswith("."):
                                 calendars.add(calendar_name)
-            except Exception:
+            except (OSError, ValueError):
                 # If git operations fail, just return filesystem calendars
                 pass
 

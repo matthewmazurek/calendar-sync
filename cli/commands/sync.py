@@ -14,6 +14,7 @@ from app.exceptions import (
 from app.processing.calendar_manager import CalendarManager
 from app.storage.calendar_repository import CalendarRepository
 from app.storage.calendar_storage import CalendarStorage
+from app.storage.git_service import GitService
 from cli.setup import setup_reader_registry, setup_writer
 from cli.utils import format_processing_summary
 
@@ -39,10 +40,14 @@ def sync_command(
     """
     config = CalendarConfig.from_env()
     storage = CalendarStorage(config)
-    repository = CalendarRepository(config.calendar_dir, storage)
-
-    # Set up reader registry
     reader_registry = setup_reader_registry()
+    git_service = GitService(
+        config.calendar_dir,
+        remote_url=config.calendar_git_remote_url,
+    )
+    repository = CalendarRepository(
+        config.calendar_dir, storage, git_service, reader_registry
+    )
 
     # Read input file
     input_path = Path(calendar_data_file).expanduser()
@@ -115,11 +120,7 @@ def sync_command(
 
         # Publish to git if requested
         if publish:
-            from app.publish import GitPublisher
-
-            remote_url = config.calendar_git_remote_url
-            publisher = GitPublisher(config.calendar_dir, remote_url=remote_url)
-            publisher.publish_calendar(calendar_name, filepath, format)
+            git_service.publish_calendar(calendar_name, filepath, format)
             print("Publishing: Calendar published to git")
     else:
         # Compose with existing calendar - requires year specification
@@ -158,9 +159,5 @@ def sync_command(
 
         # Publish to git if requested
         if publish:
-            from app.publish import GitPublisher
-
-            remote_url = config.calendar_git_remote_url
-            publisher = GitPublisher(config.calendar_dir, remote_url=remote_url)
-            publisher.publish_calendar(calendar_name, filepath, format)
+            git_service.publish_calendar(calendar_name, filepath, format)
             print("Publishing: Calendar published to git")

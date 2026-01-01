@@ -6,6 +6,8 @@ import sys
 from app.config import CalendarConfig
 from app.storage.calendar_repository import CalendarRepository
 from app.storage.calendar_storage import CalendarStorage
+from app.storage.git_service import GitService
+from cli.setup import setup_reader_registry
 
 logger = logging.getLogger(__name__)
 
@@ -21,7 +23,14 @@ def delete_command(name: str, purge_history: bool = False, force: bool = False) 
     """
     config = CalendarConfig.from_env()
     storage = CalendarStorage(config)
-    repository = CalendarRepository(config.calendar_dir, storage)
+    reader_registry = setup_reader_registry()
+    git_service = GitService(
+        config.calendar_dir,
+        remote_url=config.calendar_git_remote_url,
+    )
+    repository = CalendarRepository(
+        config.calendar_dir, storage, git_service, reader_registry
+    )
 
     calendar_dir = repository._get_calendar_dir(name)
     calendar_exists = calendar_dir.exists()
@@ -52,7 +61,7 @@ def delete_command(name: str, purge_history: bool = False, force: bool = False) 
         print(
             f"Purging calendar '{name}' from git history (this will rewrite history)..."
         )
-        if repository.git_publisher.purge_from_history(name):
+        if git_service.purge_from_history(name):
             # After purging from history, remove from filesystem if it still exists
             if calendar_exists:
                 repository.delete_calendar(name)
@@ -69,5 +78,5 @@ def delete_command(name: str, purge_history: bool = False, force: bool = False) 
         # Remove from filesystem and commit deletion to git
         repository.delete_calendar(name)
         # Commit the deletion to git for audit trail
-        repository.git_publisher.commit_deletion(name)
+        git_service.commit_deletion(name)
         print(f"Calendar '{name}' deleted")

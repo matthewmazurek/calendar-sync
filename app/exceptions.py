@@ -41,3 +41,21 @@ class CalendarGitRepoNotFoundError(CalendarError):
     """Calendar git repository not found."""
 
     pass
+
+
+class GitError(CalendarError):
+    """Base exception for git operations."""
+
+    pass
+
+
+class GitRepositoryNotFoundError(GitError):
+    """Git repository not found."""
+
+    pass
+
+
+class GitCommandError(GitError):
+    """Git command execution error."""
+
+    pass
