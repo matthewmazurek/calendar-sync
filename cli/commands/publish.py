@@ -1,11 +1,14 @@
 """Publish an existing calendar to git."""
 
+import logging
+import sys
+
 from app.config import CalendarConfig
 from app.publish import GitPublisher
 from app.storage.calendar_repository import CalendarRepository
 from app.storage.calendar_storage import CalendarStorage
 
-from cli.utils import log_error
+logger = logging.getLogger(__name__)
 
 
 def publish_command(calendar_name: str, format: str = "ics") -> None:
@@ -17,12 +20,14 @@ def publish_command(calendar_name: str, format: str = "ics") -> None:
     # Load calendar to verify it exists
     calendar_with_metadata = repository.load_calendar(calendar_name, format)
     if calendar_with_metadata is None:
-        log_error(f"Calendar '{calendar_name}' not found")
+        logger.error(f"Calendar '{calendar_name}' not found")
+        sys.exit(1)
 
     # Get latest filepath
     latest_path = repository.get_latest_calendar_path(calendar_name, format)
     if latest_path is None:
-        log_error(f"No calendar file found for '{calendar_name}'")
+        logger.error(f"No calendar file found for '{calendar_name}'")
+        sys.exit(1)
 
     # Publish
     publisher = GitPublisher(config.calendar_dir)

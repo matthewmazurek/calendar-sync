@@ -10,12 +10,6 @@ from typing import List, Optional, Tuple
 logger = logging.getLogger(__name__)
 
 
-def log_warning(message: str) -> None:
-    """Log warning and print to stderr."""
-    logger.warning(message)
-    print(f"Warning: {message}", file=sys.stderr)
-
-
 class GitPublisher:
     """Handles git operations for publishing calendars."""
 
@@ -30,9 +24,7 @@ class GitPublisher:
         self.calendar_dir = calendar_dir
         self.remote_url = remote_url
 
-    def commit_calendar_locally(
-        self, calendar_name: str
-    ) -> None:
+    def commit_calendar_locally(self, calendar_name: str) -> None:
         """
         Commit calendar changes locally (stage and commit, but don't push).
 
@@ -51,7 +43,7 @@ class GitPublisher:
             commit_message = f"Update calendar: {calendar_name}"
             self._commit_changes(commit_message)
         except Exception as e:
-            log_warning(f"Local git commit failed: {e}")
+            logger.warning(f"Local git commit failed: {e}")
             logger.debug("Calendar saved but local commit failed")
 
     def publish_calendar(
@@ -66,7 +58,7 @@ class GitPublisher:
             format: Calendar format (ics or json)
         """
         if not self._is_git_repo():
-            log_warning("Not in a git repository, skipping git operations")
+            logger.warning("Not in a git repository, skipping git operations")
             return
 
         try:
@@ -86,7 +78,7 @@ class GitPublisher:
                 print("Subscription URLs not available (could not determine remote)")
 
         except Exception as e:
-            log_warning(f"Git operation failed: {e}")
+            logger.warning(f"Git operation failed: {e}")
             print("Calendar saved but git operations failed", file=sys.stderr)
 
     def generate_subscription_urls(
@@ -196,13 +188,13 @@ class GitPublisher:
     def _stage_calendar_files(self, calendar_name: str) -> None:
         """
         Stage specific calendar files for commit (force-add to bypass .gitignore).
-        
+
         Args:
             calendar_name: Name of the calendar to stage
         """
         try:
             calendar_dir = self.calendar_dir / calendar_name
-            
+
             # Stage calendar file (could be .ics or .json)
             for ext in ["ics", "json"]:
                 calendar_file = calendar_dir / f"calendar.{ext}"
@@ -212,7 +204,7 @@ class GitPublisher:
                         check=True,
                         capture_output=True,
                     )
-            
+
             # Stage metadata file
             metadata_file = calendar_dir / "metadata.json"
             if metadata_file.exists():
@@ -256,3 +248,202 @@ class GitPublisher:
             )
         except subprocess.CalledProcessError as e:
             raise Exception(f"Failed to push changes: {e}")
+
+    def commit_deletion(self, calendar_name: str) -> None:
+        """
+        Commit calendar deletion to git.
+
+        Args:
+            calendar_name: Name of the calendar to delete
+        """
+        if not self._is_git_repo():
+            logger.debug("Not in a git repository, skipping deletion commit")
+            return
+
+        try:
+            calendar_dir = self.calendar_dir / calendar_name
+
+            # Get repo root for git commands
+            repo_root = self._get_repo_root()
+            if not repo_root:
+                logger.warning("Could not determine git repo root")
+                return
+
+            # Stage deletion of calendar files (use git rm to track deletion)
+            for ext in ["ics", "json"]:
+                calendar_file = calendar_dir / f"calendar.{ext}"
+                # Use git rm to stage deletion (works even if file doesn't exist in working dir)
+                # --ignore-unmatch prevents error if file doesn't exist in git
+                subprocess.run(
+                    ["git", "rm", "--ignore-unmatch", str(calendar_file)],
+                    cwd=repo_root,
+                    check=False,
+                    capture_output=True,
+                )
+
+            # Stage deletion of metadata file
+            metadata_file = calendar_dir / "metadata.json"
+            subprocess.run(
+                ["git", "rm", "--ignore-unmatch", str(metadata_file)],
+                cwd=repo_root,
+                check=False,
+                capture_output=True,
+            )
+
+            # Also remove the directory itself if it's tracked (recursive)
+            subprocess.run(
+                ["git", "rm", "-r", "--ignore-unmatch", str(calendar_dir)],
+                cwd=repo_root,
+                check=False,
+                capture_output=True,
+            )
+
+            # Commit the deletion
+            commit_message = f"Delete calendar: {calendar_name}"
+            self._commit_changes(commit_message)
+        except Exception as e:
+            logger.warning(f"Failed to commit deletion: {e}")
+
+    def purge_from_history(self, calendar_name: str) -> bool:
+        """
+        Remove calendar from git history entirely (hard delete).
+
+        This rewrites git history and is destructive. All commits that touched
+        this calendar will be rewritten.
+
+        Args:
+            calendar_name: Name of the calendar to purge
+
+        Returns:
+            True if successful, False otherwise
+        """
+        if not self._is_git_repo():
+            logger.warning("Not in a git repository")
+            return False
+
+        repo_root = self._get_repo_root()
+        if not repo_root:
+            logger.warning("Could not determine git repo root")
+            return False
+
+        # Resolve calendar_dir to absolute path (it might be relative)
+        if not self.calendar_dir.is_absolute():
+            # If relative, resolve it relative to repo root
+            calendar_dir_abs = (repo_root / self.calendar_dir).resolve()
+        else:
+            calendar_dir_abs = self.calendar_dir.resolve()
+
+        calendar_dir_full = calendar_dir_abs / calendar_name
+        # Get relative path from repo root
+        try:
+            rel_calendar_path = calendar_dir_full.relative_to(repo_root.resolve())
+        except ValueError:
+            logger.error(
+                f"Calendar path {calendar_dir_full} (absolute) is not within repo root {repo_root}"
+            )
+            logger.error(
+                f"Calendar dir base: {self.calendar_dir}, resolved: {calendar_dir_abs}"
+            )
+            return False
+
+        try:
+            # Try git filter-repo first (recommended tool)
+            result = subprocess.run(
+                ["git", "filter-repo", "--version"],
+                cwd=repo_root,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+
+            if result.returncode == 0:
+                # Use git filter-repo (recommended)
+                logger.info(
+                    f"Using git filter-repo to purge {calendar_name} from history"
+                )
+                subprocess.run(
+                    [
+                        "git",
+                        "filter-repo",
+                        "--path",
+                        str(rel_calendar_path),
+                        "--invert-paths",
+                        "--force",
+                    ],
+                    cwd=repo_root,
+                    check=True,
+                    capture_output=True,
+                )
+                return True
+            else:
+                # Fall back to git filter-branch (deprecated but available)
+                logger.warning(
+                    "git filter-repo not found, falling back to git filter-branch"
+                )
+                logger.warning(
+                    "Consider installing git filter-repo: pip install git-filter-repo"
+                )
+
+                # Use git filter-branch
+                subprocess.run(
+                    [
+                        "git",
+                        "filter-branch",
+                        "--force",
+                        "--index-filter",
+                        f'git rm -rf --cached --ignore-unmatch "{rel_calendar_path}"',
+                        "--prune-empty",
+                        "--tag-name-filter",
+                        "cat",
+                        "--",
+                        "--all",
+                    ],
+                    cwd=repo_root,
+                    check=True,
+                    capture_output=True,
+                )
+
+                # Clean up filter-branch backup refs
+                subprocess.run(
+                    ["git", "for-each-ref", "--format=%(refname)", "refs/original/"],
+                    cwd=repo_root,
+                    check=False,
+                    capture_output=True,
+                )
+
+                return True
+        except subprocess.CalledProcessError as e:
+            logger.error(f"Failed to purge calendar from history: {e}")
+            if e.stderr:
+                logger.error(
+                    f"Error output: {e.stderr.decode() if isinstance(e.stderr, bytes) else e.stderr}"
+                )
+            return False
+        except Exception as e:
+            logger.error(f"Unexpected error purging from history: {e}")
+            return False
+
+    def _get_repo_root(self) -> Optional[Path]:
+        """Get git repository root directory."""
+        try:
+            # Try from calendar_dir first (if it's absolute and exists)
+            if self.calendar_dir.is_absolute() and self.calendar_dir.exists():
+                cwd = self.calendar_dir
+            else:
+                # Otherwise use current working directory
+                import os
+
+                cwd = Path(os.getcwd())
+
+            result = subprocess.run(
+                ["git", "rev-parse", "--show-toplevel"],
+                cwd=cwd,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            if result.returncode == 0:
+                return Path(result.stdout.strip())
+        except Exception:
+            pass
+        return None

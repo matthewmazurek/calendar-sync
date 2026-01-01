@@ -6,7 +6,6 @@ import sys
 import traceback
 
 from app.exceptions import CalendarError
-
 from cli.commands import (
     delete_command,
     info_command,
@@ -15,7 +14,6 @@ from cli.commands import (
     publish_command,
     restore_command,
 )
-from cli.utils import log_error
 
 logger = logging.getLogger(__name__)
 
@@ -54,9 +52,7 @@ def create_parser() -> argparse.ArgumentParser:
     )
 
     # ls command (list calendars or versions)
-    ls_parser = subparsers.add_parser(
-        "ls", help="List calendars or versions"
-    )
+    ls_parser = subparsers.add_parser("ls", help="List calendars or versions")
     ls_parser.add_argument(
         "name", nargs="?", help="Calendar name (optional, if provided lists versions)"
     )
@@ -80,10 +76,13 @@ def create_parser() -> argparse.ArgumentParser:
     info_parser.add_argument("name", type=str, help="Calendar name")
 
     # Delete command
-    delete_parser = subparsers.add_parser(
-        "delete", help="Delete a calendar"
-    )
+    delete_parser = subparsers.add_parser("delete", help="Delete a calendar")
     delete_parser.add_argument("name", type=str, help="Calendar name")
+    delete_parser.add_argument(
+        "--purge-history",
+        action="store_true",
+        help="Remove calendar from git history entirely (hard delete, rewrites history)",
+    )
 
     # Publish command
     publish_parser = subparsers.add_parser(
@@ -127,11 +126,12 @@ def main() -> None:
         elif args.command == "info":
             info_command(args.name)
         elif args.command == "delete":
-            delete_command(args.name)
+            delete_command(args.name, purge_history=args.purge_history)
         elif args.command == "publish":
             publish_command(args.calendar_name, args.format)
     except CalendarError as e:
-        log_error(f"Calendar error: {e}")
+        logger.error(f"Calendar error: {e}")
+        sys.exit(1)
     except Exception as e:
         logger.error(f"Unexpected error: {e}")
         print(f"Error: {e}", file=sys.stderr)

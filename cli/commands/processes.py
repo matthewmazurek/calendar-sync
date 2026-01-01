@@ -1,6 +1,7 @@
 """Process calendar data file and create or update calendar."""
 
 import logging
+import sys
 from pathlib import Path
 
 from app.config import CalendarConfig
@@ -13,9 +14,8 @@ from app.exceptions import (
 from app.processing.calendar_manager import CalendarManager
 from app.storage.calendar_repository import CalendarRepository
 from app.storage.calendar_storage import CalendarStorage
-
 from cli.setup import setup_reader_registry, setup_writer
-from cli.utils import log_error, log_info, format_processing_summary
+from cli.utils import format_processing_summary
 
 logger = logging.getLogger(__name__)
 
@@ -53,9 +53,12 @@ def processes_command(
         reader = reader_registry.get_reader(input_path)
         file_format = input_path.suffix.lower()
         reader_name = reader.__class__.__name__
-        logger.info(f"Reading calendar file: {input_path} (format: {file_format}, reader: {reader_name})")
+        logger.info(
+            f"Reading calendar file: {input_path} (format: {file_format}, reader: {reader_name})"
+        )
     except UnsupportedFormatError as e:
-        log_error(str(e))
+        logger.error(str(e))
+        sys.exit(1)
 
     try:
         source_calendar = reader.read(input_path)
@@ -70,19 +73,21 @@ def processes_command(
             date_range = "no events"
 
         # Display ingestion summary with new lines
-        log_info("Data ingestion:")
-        log_info(f"  - Format: {file_format} ({reader_name})")
-        log_info(f"  - Events: {len(source_calendar.events)}")
-        log_info(f"  - Date range: {date_range}")
+        print("Data ingestion:")
+        print(f"  - Format: {file_format} ({reader_name})")
+        print(f"  - Events: {len(source_calendar.events)}")
+        print(f"  - Date range: {date_range}")
         if source_calendar.year:
-            log_info(f"  - Year: {source_calendar.year}")
+            print(f"  - Year: {source_calendar.year}")
         if source_calendar.revised_date:
-            log_info(f"  - Revised date: {source_calendar.revised_date}")
+            print(f"  - Revised date: {source_calendar.revised_date}")
         logger.info(f"Ingested {len(source_calendar.events)} events from {input_path}")
     except IngestionError as e:
-        log_error(f"Failed to read calendar file: {e}")
+        logger.error(f"Failed to read calendar file: {e}")
+        sys.exit(1)
     except InvalidYearError as e:
-        log_error(f"Year validation error: {e}")
+        logger.error(f"Year validation error: {e}")
+        sys.exit(1)
 
     # Create calendar manager
     manager = CalendarManager(repository)
@@ -92,17 +97,20 @@ def processes_command(
 
     if existing is None:
         # Creating new calendar - allow multi-year calendars
-        log_info(f"Creating new calendar '{calendar_name}'")
+        print(f"Creating new calendar '{calendar_name}'")
         try:
-            result, processing_summary = manager.create_calendar_from_source(source_calendar, calendar_name)
+            result, processing_summary = manager.create_calendar_from_source(
+                source_calendar, calendar_name
+            )
             format_processing_summary(processing_summary)
         except InvalidYearError as e:
-            log_error(f"Year validation error: {e}")
+            logger.error(f"Year validation error: {e}")
+            sys.exit(1)
 
         # Save calendar
         writer = setup_writer(format)
         filepath = repository.save_calendar(result.calendar, result.metadata, writer)
-        log_info(f"Writing: Calendar created at {filepath}")
+        print(f"Writing: Calendar created at {filepath}")
         logger.info(f"Calendar created: {filepath}")
 
         # Publish to git if requested
@@ -111,7 +119,7 @@ def processes_command(
 
             publisher = GitPublisher(config.calendar_dir)
             publisher.publish_calendar(calendar_name, filepath, format)
-            log_info("Publishing: Calendar published to git")
+            print("Publishing: Calendar published to git")
     else:
         # Compose with existing calendar - requires year specification
         # Determine year if not specified
@@ -119,29 +127,32 @@ def processes_command(
             if source_calendar.year is None:
                 years = {event.date.year for event in source_calendar.events}
                 if len(years) != 1:
-                    log_error(
+                    logger.error(
                         f"Source calendar contains events from multiple years: {years}. "
                         "Please specify --year option when updating an existing calendar."
                     )
+                    sys.exit(1)
                 year = years.pop()
             else:
                 year = source_calendar.year
 
-        log_info(f"Updating calendar '{calendar_name}' for year {year}")
+        print(f"Updating calendar '{calendar_name}' for year {year}")
         try:
             result, processing_summary = manager.compose_calendar_with_source(
                 calendar_name, source_calendar, year, repository
             )
             format_processing_summary(processing_summary)
         except CalendarNotFoundError as e:
-            log_error(f"Calendar not found: {e}")
+            logger.error(f"Calendar not found: {e}")
+            sys.exit(1)
         except InvalidYearError as e:
-            log_error(f"Year validation error: {e}")
+            logger.error(f"Year validation error: {e}")
+            sys.exit(1)
 
         # Save updated calendar
         writer = setup_writer(format)
         filepath = repository.save_calendar(result.calendar, result.metadata, writer)
-        log_info(f"Writing: Calendar updated at {filepath}")
+        print(f"Writing: Calendar updated at {filepath}")
         logger.info(f"Calendar updated: {filepath}")
 
         # Publish to git if requested
@@ -150,4 +161,4 @@ def processes_command(
 
             publisher = GitPublisher(config.calendar_dir)
             publisher.publish_calendar(calendar_name, filepath, format)
-            log_info("Publishing: Calendar published to git")
+            print("Publishing: Calendar published to git")

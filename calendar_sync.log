@@ -614,3 +614,11 @@ with app.app_context(). See the documentation for more information.
 2025-12-31 17:19:05,353 - INFO - Reading ICS file: data/calendars/mazurek/calendar.ics
 2025-12-31 17:19:05,408 - INFO - Created 757 events from ICS file
 2025-12-31 17:19:05,432 - INFO - No calendar changes to commit
+2026-01-01 12:01:59,733 - ERROR - Calendar path data/calendars/test_cal is not within repo root /Users/matthewmazurek/projects/calendar-sync
+2026-01-01 12:01:59,733 - ERROR - Failed to purge calendar 'test_cal' from git history
+2026-01-01 12:03:35,782 - WARNING - git filter-repo not found, falling back to git filter-branch
+2026-01-01 12:03:35,782 - WARNING - Consider installing git filter-repo: pip install git-filter-repo
+2026-01-01 12:03:47,276 - ERROR - Failed to purge calendar from history: Command '['git', 'filter-branch', '--force', '--index-filter', 'git rm -rf --cached --ignore-unmatch "data/calendars/test_cal"', '--prune-empty', '--tag-name-filter', 'cat', '--', '--all']' returned non-zero exit status 1.
+2026-01-01 12:03:47,276 - ERROR - Error output: Cannot rewrite branches: You have unstaged changes.
+
+2026-01-01 12:03:47,276 - ERROR - Failed to purge calendar 'test_cal' from git history

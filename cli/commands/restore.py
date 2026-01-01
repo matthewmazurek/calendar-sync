@@ -1,9 +1,13 @@
 """Restore calendar to specific git commit."""
 
+import logging
+import sys
+
 from app.config import CalendarConfig
 from app.storage.calendar_repository import CalendarRepository
 from app.storage.calendar_storage import CalendarStorage
-from cli.utils import log_error
+
+logger = logging.getLogger(__name__)
 
 
 def restore_command(name: str, commit: str) -> None:
@@ -15,7 +19,8 @@ def restore_command(name: str, commit: str) -> None:
     # Check if calendar has any versions in git history (works for deleted calendars too)
     versions = repository.list_calendar_versions(name)
     if not versions:
-        log_error(f"Calendar '{name}' not found in git history")
+        logger.error(f"Calendar '{name}' not found in git history")
+        sys.exit(1)
 
     # Get calendar directory (even if it doesn't exist yet)
     calendar_dir = repository._get_calendar_dir(name)
@@ -28,4 +33,5 @@ def restore_command(name: str, commit: str) -> None:
     if git_service.restore_directory_version(calendar_dir, commit):
         print(f"Calendar '{name}' restored to commit {commit[:7]}")
     else:
-        log_error(f"Failed to restore calendar '{name}' to commit {commit}")
+        logger.error(f"Failed to restore calendar '{name}' to commit {commit}")
+        sys.exit(1)

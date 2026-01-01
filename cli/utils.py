@@ -1,31 +1,10 @@
 """CLI utilities for logging and output formatting."""
 
 import logging
-import sys
 from datetime import datetime, timezone
 from typing import Dict
 
 logger = logging.getLogger(__name__)
-
-
-def log_error(message: str, exit_code: int = 1) -> None:
-    """Log error and print to stderr, then exit."""
-    logger.error(message)
-    print(f"Error: {message}", file=sys.stderr)
-    sys.exit(exit_code)
-
-
-def log_warning(message: str) -> None:
-    """Log warning and print to stderr."""
-    logger.warning(message)
-    print(f"Warning: {message}", file=sys.stderr)
-
-
-def log_info(message: str, verbose: bool = True) -> None:
-    """Log info and optionally print to stdout."""
-    logger.info(message)
-    if verbose:
-        print(message)
 
 
 def format_processing_summary(processing_summary: Dict) -> None:
@@ -44,18 +23,18 @@ def format_processing_summary(processing_summary: Dict) -> None:
     output_total = processing_summary.get("output_total", 0)
     
     if input_counts:
-        log_info("Processing (Event type: count):")
+        print("Processing (Event type: count):")
         for event_type, count in sorted(input_counts.items()):
             output_count = output_counts.get(event_type, 0)
             if output_count != count:
-                log_info(f"  - {event_type.value}: {count} (Collapsed to {output_count})")
+                print(f"  - {event_type.value}: {count} (Collapsed to {output_count})")
             else:
-                log_info(f"  - {event_type.value}: {count}")
+                print(f"  - {event_type.value}: {count}")
         
         if output_total != input_total:
-            log_info(f"  - Total: {input_total} (Collapsed to {output_total})")
+            print(f"  - Total: {input_total} (Collapsed to {output_total})")
         else:
-            log_info(f"  - Total: {input_total}")
+            print(f"  - Total: {input_total}")
 
 
 def format_relative_time(commit_date: datetime) -> str:
