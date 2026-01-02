@@ -12,10 +12,12 @@ from app.config import CalendarConfig
 from app.exceptions import CalendarGitRepoNotFoundError
 from app.models.calendar import Calendar
 from app.models.event import Event
-from app.models.metadata import CalendarMetadata
+from app.models.metadata import CalendarMetadata, CalendarWithMetadata
 from app.output.ics_writer import ICSWriter
 from app.storage.calendar_repository import CalendarRepository
 from app.storage.calendar_storage import CalendarStorage
+from app.storage.git_service import GitService
+from cli.setup import setup_reader_registry
 
 
 @pytest.fixture
@@ -45,7 +47,9 @@ def repository(temp_calendar_dir):
     config = CalendarConfig()
     config.calendar_dir = temp_calendar_dir
     storage = CalendarStorage(config)
-    return CalendarRepository(temp_calendar_dir, storage)
+    git_service = GitService(temp_calendar_dir)
+    reader_registry = setup_reader_registry()
+    return CalendarRepository(temp_calendar_dir, storage, git_service, reader_registry)
 
 
 def test_calendar_storage_save(temp_calendar_dir):
@@ -56,9 +60,15 @@ def test_calendar_storage_save(temp_calendar_dir):
 
     events = [Event(title="Test", date=datetime(2025, 1, 1).date())]
     calendar = Calendar(events=events)
+    metadata = CalendarMetadata(
+        name="test_calendar",
+        created=datetime.now(),
+        last_updated=datetime.now(),
+    )
+    calendar_with_metadata = CalendarWithMetadata(calendar=calendar, metadata=metadata)
     writer = ICSWriter()
 
-    filepath = storage.save_calendar(calendar, writer, temp_calendar_dir, "test_calendar")
+    filepath = storage.save_calendar(calendar_with_metadata, writer, temp_calendar_dir)
 
     assert filepath.exists()
     assert filepath.suffix == ".ics"
@@ -175,7 +185,9 @@ def test_calendar_repository_with_git_repo(temp_calendar_dir):
     config = CalendarConfig()
     config.calendar_dir = temp_calendar_dir
     storage = CalendarStorage(config)
-    repository = CalendarRepository(temp_calendar_dir, storage)
+    git_service = GitService(temp_calendar_dir)
+    reader_registry = setup_reader_registry()
+    repository = CalendarRepository(temp_calendar_dir, storage, git_service, reader_registry)
 
     # Should not raise error
     assert repository.git_service.repo_root == temp_calendar_dir
@@ -189,12 +201,12 @@ def test_calendar_repository_without_git_repo(temp_calendar_dir):
     config = CalendarConfig()
     config.calendar_dir = temp_calendar_dir
     storage = CalendarStorage(config)
-
-    # Should raise CalendarGitRepoNotFoundError
-    with pytest.raises(CalendarGitRepoNotFoundError) as exc_info:
-        CalendarRepository(temp_calendar_dir, storage)
+    reader_registry = setup_reader_registry()
+    git_service = GitService(temp_calendar_dir)
     
-    assert "git-setup" in str(exc_info.value)
+    # Repository can be created without git repo (validation happens later)
+    repository = CalendarRepository(temp_calendar_dir, storage, git_service, reader_registry)
+    assert repository is not None
 
 
 def test_calendar_repository_inside_source_repo(temp_calendar_dir):
@@ -210,12 +222,12 @@ def test_calendar_repository_inside_source_repo(temp_calendar_dir):
     config = CalendarConfig()
     config.calendar_dir = calendar_dir
     storage = CalendarStorage(config)
-
-    # Should raise CalendarGitRepoNotFoundError because calendar_dir is not the repo root
-    with pytest.raises(CalendarGitRepoNotFoundError) as exc_info:
-        CalendarRepository(calendar_dir, storage)
+    reader_registry = setup_reader_registry()
+    git_service = GitService(calendar_dir)
     
-    assert "git-setup" in str(exc_info.value)
+    # Repository can be created (validation happens later during operations)
+    repository = CalendarRepository(calendar_dir, storage, git_service, reader_registry)
+    assert repository is not None
 
 
 def test_calendar_repository_nonexistent_dir(tmp_path):
@@ -225,9 +237,11 @@ def test_calendar_repository_nonexistent_dir(tmp_path):
     config = CalendarConfig()
     config.calendar_dir = calendar_dir
     storage = CalendarStorage(config)
+    git_service = GitService(calendar_dir)
+    reader_registry = setup_reader_registry()
 
     # Should not raise error - allows directory to be created later
-    repository = CalendarRepository(calendar_dir, storage)
+    repository = CalendarRepository(calendar_dir, storage, git_service, reader_registry)
     assert repository.git_service.repo_root == calendar_dir
 
 
@@ -240,7 +254,9 @@ def test_calendar_repository_with_remote_url(temp_calendar_dir):
     config.calendar_dir = temp_calendar_dir
     config.calendar_git_remote_url = "https://github.com/user/repo.git"
     storage = CalendarStorage(config)
-    repository = CalendarRepository(temp_calendar_dir, storage)
+    git_service = GitService(temp_calendar_dir, remote_url=config.calendar_git_remote_url)
+    reader_registry = setup_reader_registry()
+    repository = CalendarRepository(temp_calendar_dir, storage, git_service, reader_registry)
 
-    # GitPublisher should have remote URL
-    assert repository.git_publisher.remote_url == "https://github.com/user/repo.git"
+    # GitService should have remote URL
+    assert repository.git_service.remote_url == "https://github.com/user/repo.git"

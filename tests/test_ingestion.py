@@ -9,9 +9,10 @@ from app.exceptions import IngestionError, InvalidYearError, UnsupportedFormatEr
 from app.ingestion.base import ReaderRegistry
 from app.ingestion.ics_reader import ICSReader
 from app.ingestion.json_reader import JSONReader
-from app.ingestion.word_reader import WordReader
+from app.ingestion.word_reader import TypeMatcher, WordReader
 from app.models.calendar import Calendar
 from app.models.event import Event
+from app.models.template import CalendarTemplate, EventTypeConfig, TemplateDefaults
 
 
 def test_reader_registry():
@@ -78,7 +79,8 @@ END:VEVENT
 END:VCALENDAR"""
 
     import tempfile
-    with tempfile.NamedTemporaryFile(mode='w', suffix='.ics', delete=False) as f:
+
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".ics", delete=False) as f:
         f.write(ics_content)
         temp_path = Path(f.name)
 
@@ -97,7 +99,8 @@ END:VCALENDAR"""
 def test_ics_reader_empty_file():
     """Test ICSReader with non-existent file returns empty calendar."""
     import tempfile
-    with tempfile.NamedTemporaryFile(suffix='.ics', delete=False) as f:
+
+    with tempfile.NamedTemporaryFile(suffix=".ics", delete=False) as f:
         temp_path = Path(f.name)
     temp_path.unlink()  # Delete the file
 
@@ -119,12 +122,12 @@ def test_json_reader():
                 "title": "Test Event",
                 "date": "2025-01-01",
                 "start": "0900",
-                "end": "1000"
+                "end": "1000",
             }
         ]
     }
 
-    with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
         json.dump(json_data, f)
         temp_path = Path(f.name)
 
@@ -143,7 +146,7 @@ def test_json_reader_invalid():
     """Test JSONReader with invalid JSON raises error."""
     import tempfile
 
-    with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
         f.write("invalid json {")
         temp_path = Path(f.name)
 
@@ -153,3 +156,177 @@ def test_json_reader_invalid():
             reader.read(temp_path)
     finally:
         temp_path.unlink()
+
+
+def test_time_period_expansion_defaults():
+    """Test AM/PM expansion using default time periods."""
+    template = CalendarTemplate(
+        name="test",
+        version="1.0",
+        defaults=TemplateDefaults(
+            time_periods={"AM": ("0800", "1200"), "PM": ("1300", "1700")}
+        ),
+        types={
+            "clinic": EventTypeConfig(match="clinic"),
+        },
+    )
+
+    matcher = TypeMatcher(template)
+
+    # Test that clinic AM uses default AM times
+    type_name, _ = matcher.match_type("Clinic AM")
+    assert type_name == "clinic"
+    start, end = matcher.resolve_time_periods("Clinic AM", type_name)
+    assert start == "0800"
+    assert end == "1200"
+
+    # Test that clinic PM uses default PM times
+    start, end = matcher.resolve_time_periods("Clinic PM", type_name)
+    assert start == "1300"
+    assert end == "1700"
+
+    # Test case insensitivity
+    start, end = matcher.resolve_time_periods("clinic am", type_name)
+    assert start == "0800"
+    assert end == "1200"
+
+    # Test that text without AM/PM returns None
+    start, end = matcher.resolve_time_periods("Clinic", type_name)
+    assert start is None
+    assert end is None
+
+
+def test_time_period_expansion_type_specific():
+    """Test AM/PM expansion using type-specific time periods."""
+    template = CalendarTemplate(
+        name="test",
+        version="1.0",
+        defaults=TemplateDefaults(
+            time_periods={"AM": ("0800", "1200"), "PM": ("1300", "1700")}
+        ),
+        types={
+            "ccsc": EventTypeConfig(
+                match="ccsc",
+                time_periods={"AM": ("0730", "1200"), "PM": ("1230", "1430")},
+            ),
+            "clinic": EventTypeConfig(match="clinic"),
+        },
+    )
+
+    matcher = TypeMatcher(template)
+
+    # Test that CCSC AM uses type-specific times
+    type_name, _ = matcher.match_type("CCSC AM")
+    assert type_name == "ccsc"
+    start, end = matcher.resolve_time_periods("CCSC AM", type_name)
+    assert start == "0730"
+    assert end == "1200"
+
+    # Test that CCSC PM uses type-specific times
+    start, end = matcher.resolve_time_periods("CCSC PM", type_name)
+    assert start == "1230"
+    assert end == "1430"
+
+    # Test that clinic still uses default times
+    clinic_type, _ = matcher.match_type("Clinic AM")
+    assert clinic_type == "clinic"
+    start, end = matcher.resolve_time_periods("Clinic AM", clinic_type)
+    assert start == "0800"  # Default AM time
+    assert end == "1200"
+
+    # Test that events without AM/PM return None
+    start, end = matcher.resolve_time_periods("CCSC", type_name)
+    assert start is None
+    assert end is None
+
+
+def test_time_period_expansion_no_type():
+    """Test that time period expansion returns None when no type is matched."""
+    template = CalendarTemplate(
+        name="test",
+        version="1.0",
+        defaults=TemplateDefaults(
+            time_periods={"AM": ("0800", "1200"), "PM": ("1300", "1700")}
+        ),
+        types={},
+    )
+
+    matcher = TypeMatcher(template)
+
+    # Test with None type_name
+    start, end = matcher.resolve_time_periods("Some Event AM", None)
+    assert start is None
+    assert end is None
+
+    # Test with unmatched type
+    type_name, _ = matcher.match_type("Unknown Event AM")
+    assert type_name is None
+    start, end = matcher.resolve_time_periods("Unknown Event AM", type_name)
+    assert start is None
+    assert end is None
+
+
+def test_parse_cell_events_with_am_pm_expansion():
+    """Test that events like 'CCSC AM' are parsed as timed events, not all-day."""
+    from app.ingestion.word_reader import parse_cell_events
+
+    template = CalendarTemplate(
+        name="test",
+        version="1.0",
+        defaults=TemplateDefaults(
+            time_periods={"AM": ("0800", "1200"), "PM": ("1300", "1700")}
+        ),
+        types={
+            "ccsc": EventTypeConfig(
+                match="ccsc",
+                time_periods={"AM": ("0730", "1200"), "PM": ("1230", "1430")},
+            ),
+            "clinic": EventTypeConfig(match="clinic"),
+        },
+    )
+
+    from app.ingestion.word_reader import TypeMatcher
+
+    type_matcher = TypeMatcher(template)
+
+    # Test CCSC AM - should be timed event with type-specific times
+    events = parse_cell_events(
+        "2 CCSC AM", month=2, year=2026, type_matcher=type_matcher
+    )
+    assert len(events) == 1
+    assert events[0]["title"] == "CCSC AM"
+    assert events[0]["date"] == "2026-02-02"
+    assert events[0]["start"] == "0730"  # Type-specific AM time
+    assert events[0]["end"] == "1200"
+    assert events[0]["type"] == "ccsc"
+
+    # Test CCSC PM - should be timed event with type-specific times
+    events = parse_cell_events(
+        "3 CCSC PM", month=2, year=2026, type_matcher=type_matcher
+    )
+    assert len(events) == 1
+    assert events[0]["title"] == "CCSC PM"
+    assert events[0]["date"] == "2026-02-03"
+    assert events[0]["start"] == "1230"  # Type-specific PM time
+    assert events[0]["end"] == "1430"
+    assert events[0]["type"] == "ccsc"
+
+    # Test Clinic AM - should be timed event with default times
+    events = parse_cell_events(
+        "4 Clinic AM", month=2, year=2026, type_matcher=type_matcher
+    )
+    assert len(events) == 1
+    assert events[0]["title"] == "Clinic AM"
+    assert events[0]["date"] == "2026-02-04"
+    assert events[0]["start"] == "0800"  # Default AM time
+    assert events[0]["end"] == "1200"
+    assert events[0]["type"] == "clinic"
+
+    # Test event without AM/PM - should be all-day (no start/end)
+    events = parse_cell_events("5 CCSC", month=2, year=2026, type_matcher=type_matcher)
+    assert len(events) == 1
+    assert events[0]["title"] == "CCSC"
+    assert events[0]["date"] == "2026-02-05"
+    assert "start" not in events[0]  # All-day event
+    assert "end" not in events[0]
+    assert events[0]["type"] == "ccsc"

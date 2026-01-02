@@ -1,15 +1,26 @@
 """Tests for ICS output writer."""
 
-from datetime import date, time
+from datetime import date, datetime, time
 
 import pytest
 from icalendar import Calendar as ICalendar
 
 from app.models.calendar import Calendar
 from app.models.event import Event
+from app.models.metadata import CalendarMetadata, CalendarWithMetadata
 from app.output.ics_writer import ICSWriter
 
-WORK_LOCATION = "Foothills Medical Centre, 1403 29 St NW, Calgary AB T2N 2T9, Canada"
+WORK_LOCATION = "1403 29 St NW, Calgary AB T2N 2T9, Canada"
+
+
+def make_calendar_with_metadata(calendar: Calendar, name: str = "test") -> CalendarWithMetadata:
+    """Helper to wrap a Calendar with default metadata."""
+    metadata = CalendarMetadata(
+        name=name,
+        created=datetime.now(),
+        last_updated=datetime.now(),
+    )
+    return CalendarWithMetadata(calendar=calendar, metadata=metadata)
 
 
 def test_make_calendar_creates_valid_icalendar():
@@ -32,7 +43,8 @@ def test_make_calendar_creates_valid_icalendar():
 
     try:
         writer = ICSWriter()
-        writer.write(calendar, temp_path)
+        calendar_with_metadata = make_calendar_with_metadata(calendar)
+        writer.write(calendar_with_metadata, temp_path)
 
         with open(temp_path, 'rb') as f:
             ical_content = f.read()
@@ -69,7 +81,8 @@ def test_make_calendar_includes_all_required_fields():
 
     try:
         writer = ICSWriter()
-        writer.write(calendar, temp_path)
+        calendar_with_metadata = make_calendar_with_metadata(calendar)
+        writer.write(calendar_with_metadata, temp_path)
 
         with open(temp_path, 'rb') as f:
             ical_content = f.read()
@@ -97,7 +110,8 @@ def test_make_calendar_handles_all_day_events():
 
     try:
         writer = ICSWriter()
-        writer.write(calendar, temp_path)
+        calendar_with_metadata = make_calendar_with_metadata(calendar)
+        writer.write(calendar_with_metadata, temp_path)
 
         with open(temp_path, 'rb') as f:
             ical_content = f.read()
@@ -125,7 +139,8 @@ def test_make_calendar_handles_multiple_events():
 
     try:
         writer = ICSWriter()
-        writer.write(calendar, temp_path)
+        calendar_with_metadata = make_calendar_with_metadata(calendar)
+        writer.write(calendar_with_metadata, temp_path)
 
         with open(temp_path, 'rb') as f:
             ical_content = f.read()
@@ -151,6 +166,8 @@ def test_calendar_location_handling():
             start=time(9, 0),
             end=time(17, 0),
             location=WORK_LOCATION,
+            location_geo=(51.065389, -114.133306),
+            location_apple_title="Foothills Medical Centre",
         ),
         Event(
             title="Regular Meeting",
@@ -167,7 +184,8 @@ def test_calendar_location_handling():
 
     try:
         writer = ICSWriter()
-        writer.write(calendar, temp_path)
+        calendar_with_metadata = make_calendar_with_metadata(calendar)
+        writer.write(calendar_with_metadata, temp_path)
 
         with open(temp_path, 'rb') as f:
             ical_content = f.read()

@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import Optional
 
 from app.config import CalendarConfig
+from app.models.metadata import CalendarWithMetadata
 from app.output.base import CalendarWriter
 
 
@@ -15,16 +16,18 @@ class CalendarStorage:
         self.config = config or CalendarConfig()
 
     def save_calendar(
-        self, calendar, writer: CalendarWriter, calendar_dir: Path, name: str
+        self,
+        calendar_with_metadata: CalendarWithMetadata,
+        writer: CalendarWriter,
+        calendar_dir: Path,
     ) -> Path:
         """
         Save calendar using writer.
 
         Args:
-            calendar: Calendar to save
+            calendar_with_metadata: Calendar with metadata to save
             writer: CalendarWriter implementation
             calendar_dir: Directory to save in
-            name: Calendar name
 
         Returns:
             Path to saved file
@@ -37,6 +40,6 @@ class CalendarStorage:
         filepath = calendar_dir / filename
 
         # Write using writer
-        writer.write(calendar, filepath)
+        writer.write(calendar_with_metadata, filepath)
 
         return filepath

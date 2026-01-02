@@ -15,6 +15,7 @@ from cli.commands import (
     publish_command,
     restore_command,
     sync_command,
+    template_command,
 )
 
 logger = logging.getLogger(__name__)
@@ -158,6 +159,9 @@ def create_parser() -> argparse.ArgumentParser:
     # Config command
     subparsers.add_parser("config", help="Display configuration file path and settings")
 
+    # Template command
+    subparsers.add_parser("template", help="Display available templates and template directory")
+
     return parser
 
 
@@ -203,6 +207,8 @@ def main() -> None:
             git_setup_command(delete=getattr(args, "delete", False))
         elif args.command == "config":
             config_command()
+        elif args.command == "template":
+            template_command()
     except CalendarError as e:
         logger.error(f"Calendar error: {e}")
         sys.exit(1)

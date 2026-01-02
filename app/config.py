@@ -19,6 +19,8 @@ class CalendarConfig(BaseModel):
     calendar_dir: Path = Field(default=Path("data/calendars"))
     ls_default_limit: int = Field(default=5, ge=1)
     calendar_git_remote_url: Optional[str] = None
+    default_template: Optional[str] = None
+    template_dir: Path = Field(default=Path("data/templates"))
 
     @classmethod
     def from_env(cls) -> "CalendarConfig":
@@ -40,5 +42,9 @@ class CalendarConfig(BaseModel):
                 pass  # Keep default if invalid
         if "CALENDAR_GIT_REMOTE_URL" in os.environ:
             config_dict["calendar_git_remote_url"] = os.environ["CALENDAR_GIT_REMOTE_URL"]
+        if "DEFAULT_TEMPLATE" in os.environ:
+            config_dict["default_template"] = os.environ["DEFAULT_TEMPLATE"]
+        if "TEMPLATE_DIR" in os.environ:
+            config_dict["template_dir"] = Path(os.environ["TEMPLATE_DIR"])
 
         return cls(**config_dict)

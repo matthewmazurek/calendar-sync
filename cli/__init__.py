@@ -22,10 +22,10 @@ file_handler = logging.FileHandler(logs_dir / "calendar_sync.log")
 file_handler.setFormatter(file_formatter)
 file_handler.setLevel(logging.INFO)
 
-# Console handler (no timestamp) - only warnings and errors
+# Console handler (no timestamp) - show info, warnings and errors
 console_handler = logging.StreamHandler(sys.stderr)
 console_handler.setFormatter(console_formatter)
-console_handler.setLevel(logging.WARNING)
+console_handler.setLevel(logging.INFO)
 
 # Configure root logger
 root_logger = logging.getLogger()

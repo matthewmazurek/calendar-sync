@@ -1,0 +1,15 @@
+{
+    "name": "mazurek",
+    "version": "1.0",
+    "extends": "medical_default",
+    "locations": {
+        "work": {
+            "address": "1403 29 St NW, Calgary AB T2N 2T9, Canada",
+            "geo": [
+                51.065389,
+                -114.133306
+            ],
+            "apple_title": "Foothills Medical Centre"
+        }
+    }
+}

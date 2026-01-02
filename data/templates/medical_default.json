@@ -1,0 +1,85 @@
+{
+    "name": "medical_default",
+    "version": "1.0",
+    "settings": {
+        "time_format": "12h"
+    },
+    "locations": {
+        "work": {},
+        "office": {},
+        "home": {}
+    },
+    "defaults": {
+        "location": null,
+        "consolidate": "title",
+        "overnight": "split",
+        "time_periods": {
+            "AM": [
+                "0800",
+                "1200"
+            ],
+            "PM": [
+                "1230",
+                "1630"
+            ]
+        }
+    },
+    "types": {
+        "on_call": {
+            "match": "on call",
+            "label": "^(.+?)\\s+on call",
+            "location": "work",
+            "consolidate": {
+                "group_by": "label",
+                "pattern_aware": true
+            },
+            "overnight": {
+                "as": "all_day",
+                "format": "{label} on call {time_range}"
+            }
+        },
+        "endoscopy": {
+            "match": [
+                "endoscopy",
+                "endo"
+            ],
+            "location": "work",
+            "consolidate": false,
+            "time_periods": {
+                "AM": [
+                    "0730",
+                    "1200"
+                ],
+                "PM": [
+                    "1230",
+                    "1430"
+                ]
+            }
+        },
+        "ccsc": {
+            "match": "ccsc",
+            "location": "work",
+            "consolidate": false,
+            "time_periods": {
+                "AM": [
+                    "0730",
+                    "1200"
+                ],
+                "PM": [
+                    "1230",
+                    "1430"
+                ]
+            }
+        },
+        "clinic": {
+            "match": "clinic",
+            "location": "work",
+            "consolidate": false
+        },
+        "admin": {
+            "match": "admin",
+            "location": "office",
+            "consolidate": false
+        }
+    }
+}

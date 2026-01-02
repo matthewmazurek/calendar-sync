@@ -340,6 +340,7 @@ class GitService:
             filepath: Path to the calendar file that was saved
             format: Calendar format (ics or json)
         """
+
         if not self._is_git_repo():
             logger.warning("Not in a git repository, skipping git operations")
             return
@@ -355,7 +356,9 @@ class GitService:
             from app.storage.subscription_url_generator import SubscriptionUrlGenerator
 
             url_generator = SubscriptionUrlGenerator(self.repo_root, self.remote_url)
-            urls = url_generator.generate_subscription_urls(calendar_name, filepath, format)
+            urls = url_generator.generate_subscription_urls(
+                calendar_name, filepath, format
+            )
             if urls:
                 print("Calendar subscription URLs:")
                 for url in urls:
@@ -528,10 +531,11 @@ class GitService:
         Args:
             calendar_name: Name of the calendar to stage
         """
-        calendar_dir = self.repo_root / calendar_name
+        calendar_dir = (self.repo_root / calendar_name).resolve()
         repo_root = self._get_repo_root()
         if not repo_root:
             raise GitRepositoryNotFoundError("Could not determine git repo root")
+        repo_root = repo_root.resolve()
 
         # Stage calendar file (could be .ics or .json)
         for ext in CALENDAR_EXTENSIONS:
@@ -543,7 +547,9 @@ class GitService:
                     ["git", "add", str(rel_path)], repo_root
                 )
                 if result.returncode != 0:
-                    raise GitCommandError(f"Failed to stage calendar file: {result.stderr}")
+                    raise GitCommandError(
+                        f"Failed to stage calendar file: {result.stderr}"
+                    )
 
         # Stage metadata file
         metadata_file = calendar_dir / METADATA_FILENAME
@@ -576,12 +582,53 @@ class GitService:
         if result.returncode != 0:
             raise GitCommandError(f"Failed to commit changes: {result.stderr}")
 
+    def _has_upstream_branch(self, branch: str) -> bool:
+        """
+        Check if a branch has an upstream tracking branch configured.
+
+        Args:
+            branch: Branch name to check
+
+        Returns:
+            True if branch has upstream, False otherwise
+        """
+        repo_root = self._get_repo_root()
+        if not repo_root:
+            return False
+
+        # Check if upstream is configured using git rev-parse
+        result = self.git_client.run_command(
+            ["git", "rev-parse", "--abbrev-ref", f"{branch}@{{u}}"], repo_root
+        )
+        return result.returncode == 0
+
     def _push_changes(self) -> None:
         """Push committed changes to remote."""
         repo_root = self._get_repo_root()
         if not repo_root:
             raise GitRepositoryNotFoundError("Could not determine git repo root")
 
-        result = self.git_client.run_command(["git", "push"], repo_root)
+        # Get current branch
+        branch = self._get_branch()
+
+        # Check if branch has upstream tracking
+        if not self._has_upstream_branch(branch):
+            # Check if remote exists
+            remote_url = self.get_remote_url("origin")
+            if not remote_url:
+                raise GitCommandError(
+                    "No remote 'origin' configured. Cannot set upstream branch."
+                )
+
+            # Push with --set-upstream to configure tracking
+            result = self.git_client.run_command(
+                ["git", "push", "--set-upstream", "origin", branch], repo_root
+            )
+        else:
+            # Branch has upstream, use regular push
+            result = self.git_client.run_command(["git", "push"], repo_root)
+
         if result.returncode != 0:
             raise GitCommandError(f"Failed to push changes: {result.stderr}")
+
+        logger.info(f"Pushed changes to remote.")

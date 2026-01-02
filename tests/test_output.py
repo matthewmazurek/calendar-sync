@@ -1,6 +1,6 @@
 """Tests for output layer."""
 
-from datetime import date, time
+from datetime import date, datetime, time
 from pathlib import Path
 import tempfile
 
@@ -9,8 +9,19 @@ from icalendar import Calendar as ICalendar
 
 from app.models.calendar import Calendar
 from app.models.event import Event
+from app.models.metadata import CalendarMetadata, CalendarWithMetadata
 from app.output.ics_writer import ICSWriter
 from app.output.json_writer import JSONWriter
+
+
+def make_calendar_with_metadata(calendar: Calendar, name: str = "test") -> CalendarWithMetadata:
+    """Helper to wrap a Calendar with default metadata."""
+    metadata = CalendarMetadata(
+        name=name,
+        created=datetime.now(),
+        last_updated=datetime.now(),
+    )
+    return CalendarWithMetadata(calendar=calendar, metadata=metadata)
 
 
 def test_ics_writer():
@@ -24,13 +35,14 @@ def test_ics_writer():
         )
     ]
     calendar = Calendar(events=events)
+    calendar_with_metadata = make_calendar_with_metadata(calendar)
 
     with tempfile.NamedTemporaryFile(suffix='.ics', delete=False) as f:
         temp_path = Path(f.name)
 
     try:
         writer = ICSWriter()
-        writer.write(calendar, temp_path)
+        writer.write(calendar_with_metadata, temp_path)
 
         # Verify file was created
         assert temp_path.exists()
@@ -58,13 +70,14 @@ def test_ics_writer_all_day_event():
         )
     ]
     calendar = Calendar(events=events)
+    calendar_with_metadata = make_calendar_with_metadata(calendar)
 
     with tempfile.NamedTemporaryFile(suffix='.ics', delete=False) as f:
         temp_path = Path(f.name)
 
     try:
         writer = ICSWriter()
-        writer.write(calendar, temp_path)
+        writer.write(calendar_with_metadata, temp_path)
 
         with open(temp_path, 'rb') as f:
             ical_content = f.read()
@@ -92,13 +105,14 @@ def test_json_writer():
         )
     ]
     calendar = Calendar(events=events)
+    calendar_with_metadata = make_calendar_with_metadata(calendar)
 
     with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
         temp_path = Path(f.name)
 
     try:
         writer = JSONWriter()
-        writer.write(calendar, temp_path)
+        writer.write(calendar_with_metadata, temp_path)
 
         # Verify file was created
         assert temp_path.exists()

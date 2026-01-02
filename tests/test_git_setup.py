@@ -189,7 +189,8 @@ def test_git_setup_command_with_gh_cli(tmp_path, monkeypatch):
         with patch("cli.commands.git_setup.CalendarConfig.from_env", return_value=config), \
              patch("cli.commands.git_setup.check_gh_cli_available", return_value=True), \
              patch("cli.commands.git_setup.get_github_username_from_gh", return_value="testuser"), \
-             patch("cli.commands.git_setup.create_repo_with_gh", return_value=True):
+             patch("cli.commands.git_setup.create_repo_with_gh", return_value=True), \
+             patch("builtins.input", return_value=""):
             git_setup_command()
             # Should have created .git directory
             assert (calendar_dir / ".git").exists()

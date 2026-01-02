@@ -159,9 +159,8 @@ class CalendarRepository:
         metadata.last_updated = datetime.now()
 
         # Save calendar file
-        filepath = self.storage.save_calendar(
-            calendar, writer, calendar_dir, metadata.name
-        )
+        calendar_with_metadata = CalendarWithMetadata(calendar=calendar, metadata=metadata)
+        filepath = self.storage.save_calendar(calendar_with_metadata, writer, calendar_dir)
 
         # Save metadata
         self.save_metadata(metadata)
@@ -185,12 +184,12 @@ class CalendarRepository:
         if not metadata_path.exists():
             return None
 
-            try:
-                with open(metadata_path, "r", encoding="utf-8") as f:
-                    data = json.load(f)
-                return CalendarMetadata(**data)
-            except (OSError, ValueError, KeyError):
-                return None
+        try:
+            with open(metadata_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            return CalendarMetadata(**data)
+        except (OSError, ValueError, KeyError):
+            return None
 
     def list_calendars(self, include_deleted: bool = False) -> List[str]:
         """

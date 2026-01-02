@@ -24,8 +24,17 @@ class ICSReader:
                 logger.warning(f"ICS file does not exist: {path}")
                 return CalendarModel(events=[])
 
+            # Check if file is empty
+            if path.stat().st_size == 0:
+                logger.warning(f"ICS file is empty: {path}")
+                return CalendarModel(events=[])
+
             with open(path, "r", encoding="utf-8") as f:
-                cal = Calendar.from_ical(f.read())
+                content = f.read()
+                if not content.strip():
+                    logger.warning(f"ICS file contains only whitespace: {path}")
+                    return CalendarModel(events=[])
+                cal = Calendar.from_ical(content)
         except Exception as e:
             raise IngestionError(f"Failed to read ICS file: {e}") from e
 
@@ -56,6 +65,41 @@ class ICSReader:
         location = str(vevent.get("location", "")) if vevent.get("location") else None
         if location == "":
             location = None
+        
+        # If location contains a newline (from previous round-trip with apple_title),
+        # extract only the address part (after the newline)
+        if location and "\n" in location:
+            parts = location.split("\n", 1)
+            if len(parts) == 2:
+                # The second part is the actual address
+                location = parts[1]
+
+        # Extract geo coordinates
+        geo = None
+        geo_prop = vevent.get("geo")
+        if geo_prop:
+            try:
+                # Geo can be a vGeo object with latitude/longitude attributes
+                if hasattr(geo_prop, "latitude") and hasattr(geo_prop, "longitude"):
+                    # vGeo object
+                    geo = (float(geo_prop.latitude), float(geo_prop.longitude))
+                elif isinstance(geo_prop, (tuple, list)) and len(geo_prop) == 2:
+                    # Already a tuple
+                    geo = (float(geo_prop[0]), float(geo_prop[1]))
+            except (ValueError, TypeError, AttributeError) as e:
+                logger.warning(f"Failed to parse geo coordinates: {e}")
+
+        # Extract Apple structured location title
+        apple_title = None
+        apple_location = vevent.get("X-APPLE-STRUCTURED-LOCATION")
+        if apple_location:
+            try:
+                # Extract X-TITLE parameter
+                params = apple_location.params if hasattr(apple_location, "params") else {}
+                if "X-TITLE" in params:
+                    apple_title = str(params["X-TITLE"])
+            except (AttributeError, KeyError):
+                pass
 
         # Extract start and end times
         dtstart = vevent.get("dtstart")
@@ -65,6 +109,12 @@ class ICSReader:
             return None
 
         event_dict = {"title": title, "location": location}
+        
+        # Add geo data if present
+        if geo:
+            event_dict["location_geo"] = geo
+        if apple_title:
+            event_dict["location_apple_title"] = apple_title
 
         # Convert dtstart to datetime object
         if hasattr(dtstart.dt, "date") and hasattr(dtstart.dt, "time"):

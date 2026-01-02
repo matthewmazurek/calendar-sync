@@ -46,20 +46,6 @@ def create_app():
     )
     manager = CalendarManager(repository)
 
-    @app.route("/", methods=["GET"])
-    def root():
-        """Root endpoint with API information."""
-        return jsonify({
-            "name": "Calendar Sync API",
-            "version": "1.0",
-            "endpoints": {
-                "POST /calendars/<name>": "Create or update a calendar",
-                "GET /calendars/<name>": "Get a calendar",
-                "GET /calendars": "List all calendars",
-                "DELETE /calendars/<name>": "Delete a calendar",
-            }
-        })
-
     def handle_error(error: Exception, default_status: int = 500):
         """Handle errors and return appropriate JSON response."""
         error_type = type(error).__name__
@@ -272,7 +258,7 @@ def create_app():
                 temp_path = Path(temp.name)
 
             try:
-                writer.write(calendar_with_metadata.calendar, temp_path)
+                writer.write(calendar_with_metadata, temp_path)
                 content = temp_path.read_bytes()
 
                 # Set appropriate content type
@@ -309,28 +295,22 @@ def create_app():
             # Get metadata for each calendar
             calendar_list = []
             for cal_name in calendars:
-                try:
-                    # Try to load metadata
-                    metadata = repository.load_metadata(cal_name)
-                    if metadata:
-                        calendar_list.append(
-                            {
-                                "name": cal_name,
-                                "created": metadata.created.isoformat() if metadata.created else None,
-                                "last_updated": metadata.last_updated.isoformat() if metadata.last_updated else None,
-                                "format": metadata.format,
-                            }
-                        )
-                    else:
-                        calendar_list.append({"name": cal_name})
-                except Exception as e:
-                    # If metadata loading fails, just include the name
-                    logger.warning(f"Failed to load metadata for {cal_name}: {e}")
+                # Try to load metadata
+                metadata = repository.load_metadata(cal_name)
+                if metadata:
+                    calendar_list.append(
+                        {
+                            "name": cal_name,
+                            "created": metadata.created.isoformat() if metadata.created else None,
+                            "last_updated": metadata.last_updated.isoformat() if metadata.last_updated else None,
+                            "format": metadata.format,
+                        }
+                    )
+                else:
                     calendar_list.append({"name": cal_name})
 
             return jsonify({"calendars": calendar_list, "count": len(calendar_list)})
         except Exception as e:
-            logger.exception("Error listing calendars")
             return handle_error(e)
 
     @app.route("/calendars/<calendar_name>", methods=["DELETE"])

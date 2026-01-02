@@ -9,8 +9,6 @@ from app.models.event import Event, EventType
 
 logger = logging.getLogger(__name__)
 
-WORK_LOCATION = "Foothills Medical Centre, 1403 29 St NW, Calgary AB T2N 2T9, Canada"
-
 
 class EventProcessor(Protocol):
     """Protocol for event processors."""
@@ -62,7 +60,7 @@ def format_time(time_obj) -> str:
 
 def get_oncall_type(event: Event) -> str | None:
     """Extract the base on-call type from event title."""
-    if event.type != EventType.ON_CALL:
+    if event.get_type_enum() != EventType.ON_CALL:
         return None
 
     title_lower = event.title.lower()
@@ -79,7 +77,7 @@ class OnCallEventProcessor:
 
     def can_process(self, event: Event) -> bool:
         """Check if event is an on-call event."""
-        return event.type == EventType.ON_CALL
+        return event.get_type_enum() == EventType.ON_CALL
 
     def process(self, events: List[Event]) -> List[Event]:
         """Consolidate on-call events by date."""
@@ -95,7 +93,9 @@ class OnCallEventProcessor:
 
         for event in events:
             if self._is_overnight_oncall(event):
-                processed, oncall_type, time_range = self._process_overnight_oncall(event)
+                processed, oncall_type, time_range = self._process_overnight_oncall(
+                    event
+                )
                 overnight_events.append((processed, oncall_type, time_range))
             else:
                 regular_events.append(event)
@@ -114,7 +114,9 @@ class OnCallEventProcessor:
         for oncall_type, events_of_type in oncall_by_type.items():
             # Sort by date
             events_of_type.sort(key=lambda x: x[0].date)
-            events_by_date = {event.date: (event, time_range) for event, time_range in events_of_type}
+            events_by_date = {
+                event.date: (event, time_range) for event, time_range in events_of_type
+            }
             all_dates = sorted(events_by_date.keys())
 
             start_idx = 0
@@ -128,7 +130,9 @@ class OnCallEventProcessor:
                 stretch_dates = all_dates[start_idx : end_idx + 1]
                 stretch_events = [events_by_date[d] for d in stretch_dates]
                 overnight_in_stretch = [
-                    (event, time_range) for event, time_range in stretch_events if time_range is not None
+                    (event, time_range)
+                    for event, time_range in stretch_events
+                    if time_range is not None
                 ]
 
                 if len(stretch_dates) == 1 and overnight_in_stretch:
@@ -234,7 +238,9 @@ class AllDayEventProcessor:
 
                 start_idx = end_idx + 1
 
-        logger.info(f"Consolidated {len(events)} all-day events to {len(consolidated)} events")
+        logger.info(
+            f"Consolidated {len(events)} all-day events to {len(consolidated)} events"
+        )
         return consolidated
 
 
@@ -243,7 +249,7 @@ class RegularEventProcessor:
 
     def can_process(self, event: Event) -> bool:
         """Check if event is a regular timed event."""
-        return not event.is_all_day and event.type != EventType.ON_CALL
+        return not event.is_all_day and event.get_type_enum() != EventType.ON_CALL
 
     def process(self, events: List[Event]) -> List[Event]:
         """Process regular events (overnight splitting, location assignment)."""
@@ -254,11 +260,10 @@ class RegularEventProcessor:
             if event.is_overnight:
                 processed.extend(self._split_overnight_event(event))
             else:
-                # Add location if required
-                if event.requires_location and not event.location:
-                    event = event.model_copy(update={"location": WORK_LOCATION})
                 processed.append(event)
-        logger.info(f"Processed {len(events)} regular events to {len(processed)} events")
+        logger.info(
+            f"Processed {len(events)} regular events to {len(processed)} events"
+        )
         return processed
 
     def _split_overnight_event(self, event: Event) -> List[Event]:
@@ -296,7 +301,7 @@ class EventProcessingPipeline:
 
     def process(self, events: List[Event]) -> Tuple[List[Event], dict]:
         """Route events to appropriate processors based on type.
-        
+
         Returns:
             Tuple of (processed_events, summary_dict) where summary_dict contains
             event counts by type before and after processing.
@@ -308,9 +313,11 @@ class EventProcessingPipeline:
 
         # Count events by type before processing
         from app.models.event import EventType
+
         input_type_counts = defaultdict(int)
         for event in events:
-            input_type_counts[event.type] += 1
+            type_value = event.type or event.get_type_enum().value
+            input_type_counts[type_value] += 1
 
         # Group events by type
         by_type = defaultdict(list)
@@ -333,33 +340,27 @@ class EventProcessingPipeline:
             if processor is None:
                 processed_events.extend(event_group)
                 for event in event_group:
-                    output_type_counts[event.type] += 1
+                    type_value = event.type or event.get_type_enum().value
+                    output_type_counts[type_value] += 1
             else:
                 processed = processor.process(event_group)
                 processed_events.extend(processed)
                 for event in processed:
-                    output_type_counts[event.type] += 1
+                    type_value = event.type or event.get_type_enum().value
+                    output_type_counts[type_value] += 1
 
         # Sort by date
         processed_events.sort(key=lambda e: e.date)
 
-        # Add location to events that need it
-        final_events = []
-        for event in processed_events:
-            if not event.location:
-                title_lower = event.title.lower()
-                keywords = ["endo", "ccsc", "clinic", "on call"]
-                if any(keyword in title_lower for keyword in keywords):
-                    event = event.model_copy(update={"location": WORK_LOCATION})
-            final_events.append(event)
-        
         # Build summary
         summary = {
             "input_counts": dict(input_type_counts),
             "output_counts": dict(output_type_counts),
             "input_total": len(events),
-            "output_total": len(final_events),
+            "output_total": len(processed_events),
         }
-        
-        logger.info(f"Pipeline complete: {len(events)} input events -> {len(final_events)} final events")
-        return final_events, summary
+
+        logger.info(
+            f"Pipeline complete: {len(events)} input events -> {len(processed_events)} final events"
+        )
+        return processed_events, summary

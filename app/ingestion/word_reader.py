@@ -15,8 +15,86 @@ from docx import Document
 from app.exceptions import IngestionError, InvalidYearError
 from app.models.calendar import Calendar
 from app.models.event import Event
+from app.models.template import CalendarTemplate, EventTypeConfig
 
 logger = logging.getLogger(__name__)
+
+
+class TypeMatcher:
+    """Matches event text to event types using template configuration."""
+
+    def __init__(self, template: CalendarTemplate):
+        """Initialize matcher with template."""
+        self.template = template
+        # Build ordered list of type configs (order matters for matching)
+        self.type_configs: list[tuple[str, EventTypeConfig]] = list(
+            template.types.items()
+        )
+
+    def match_type(self, text: str) -> tuple[str | None, str | None]:
+        """
+        Match text to an event type and extract label.
+
+        Returns:
+            Tuple of (type_name, label) or (None, None) if no match
+        """
+        text_lower = text.lower()
+
+        for type_name, config in self.type_configs:
+            # Handle match patterns
+            matches = config.match if isinstance(config.match, list) else [config.match]
+
+            for pattern in matches:
+                if config.match_mode == "regex":
+                    match = re.search(pattern, text_lower, re.IGNORECASE)
+                    if match:
+                        label = None
+                        if config.label:
+                            # Extract label using label regex
+                            label_match = re.search(config.label, text, re.IGNORECASE)
+                            if label_match and label_match.lastindex >= 1:
+                                label = label_match.group(1).strip()
+                        return (type_name, label)
+                else:  # contains mode
+                    if pattern.lower() in text_lower:
+                        label = None
+                        if config.label:
+                            # Extract label using label regex
+                            label_match = re.search(config.label, text, re.IGNORECASE)
+                            if label_match and label_match.lastindex >= 1:
+                                label = label_match.group(1).strip()
+                        return (type_name, label)
+
+        return (None, None)
+
+    def resolve_time_periods(
+        self, text: str, type_name: str | None
+    ) -> tuple[str | None, str | None]:
+        """
+        Resolve time periods (AM/PM) to actual times if applicable.
+
+        Returns:
+            Tuple of (start_time, end_time) or (None, None)
+        """
+        if type_name is None:
+            return (None, None)
+
+        type_config = self.template.types.get(type_name)
+        if not type_config:
+            return (None, None)
+
+        defaults = self.template.defaults
+        # Use type-specific time_periods if available, otherwise fall back to defaults
+        time_periods = type_config.time_periods or defaults.time_periods
+
+        # Check if text contains a time period indicator
+        text_upper = text.upper()
+        for period, (start, end) in time_periods.items():
+            if period in text_upper:
+                return (start, end)
+
+        return (None, None)
+
 
 # Map month names (uppercase) to month numbers
 MONTH_MAP = {
@@ -48,12 +126,12 @@ def extract_year_from_header(header: str) -> int | None:
 
 def extract_revised_date(doc: Document) -> date | None:
     """Extract revised date from document header.
-    
+
     Looks for pattern like "Revised December 16, 2025" in headers or paragraphs.
     """
     # Pattern: "Revised December 16, 2025" (matches format in header)
     pattern = r"Revised\s+([A-Za-z]+)\s+(\d+),?\s+(\d{4})"
-    
+
     # Check headers first (most common location)
     for section in doc.sections:
         if section.header:
@@ -66,33 +144,23 @@ def extract_revised_date(doc: Document) -> date | None:
                     year = int(match.group(3))
                     if month_name in MONTH_MAP:
                         try:
-                            revised_date = datetime(year, MONTH_MAP[month_name], day).date()
-                            logger.info(f"Extracted revised date from header: {revised_date}")
+                            revised_date = datetime(
+                                year, MONTH_MAP[month_name], day
+                            ).date()
+                            logger.info(
+                                f"Extracted revised date from header: {revised_date}"
+                            )
                             return revised_date
                         except ValueError:
                             pass
-    
-    # Fallback: check paragraphs
-    for para in doc.paragraphs:
-        text = para.text
-        match = re.search(pattern, text, re.IGNORECASE)
-        if match:
-            month_name = match.group(1).upper()
-            day = int(match.group(2))
-            year = int(match.group(3))
-            if month_name in MONTH_MAP:
-                try:
-                    revised_date = datetime(year, MONTH_MAP[month_name], day).date()
-                    logger.info(f"Extracted revised date from paragraph: {revised_date}")
-                    return revised_date
-                except ValueError:
-                    pass
-    
+
     logger.debug("No revised date found in document")
     return None
 
 
-def parse_cell_events(cell_text: str, month: int, year: int) -> List[dict]:
+def parse_cell_events(
+    cell_text: str, month: int, year: int, type_matcher: TypeMatcher | None = None
+) -> List[dict]:
     """Parse events from a calendar cell."""
     events = []
     lines = [ln.strip() for ln in cell_text.split("\n") if ln.strip()]
@@ -136,12 +204,55 @@ def parse_cell_events(cell_text: str, month: int, year: int) -> List[dict]:
                 if additional_text:
                     full_title = f"{title} ({additional_text.strip()})"
 
-                events.append(
-                    {"title": full_title, "start": start, "end": end, "date": date_str}
-                )
+                event_dict = {
+                    "title": full_title,
+                    "start": start,
+                    "end": end,
+                    "date": date_str,
+                }
+
+                # Apply template matching if available
+                if type_matcher:
+                    type_name, label = type_matcher.match_type(full_title)
+                    if type_name:
+                        # Use template type name directly (user-defined, no enum conversion)
+                        event_dict["type"] = type_name
+                    if label:
+                        event_dict["label"] = label
+
+                    # Check for time period resolution (e.g., "CCSC AM")
+                    period_start, period_end = type_matcher.resolve_time_periods(
+                        full_title, type_name
+                    )
+                    if period_start and period_end:
+                        # Override times with period times
+                        event_dict["start"] = period_start
+                        event_dict["end"] = period_end
+
+                events.append(event_dict)
             else:
                 # All-day or untimed event
-                events.append({"title": ev, "date": date_str})
+                event_dict = {"title": ev, "date": date_str}
+
+                # Apply template matching if available
+                if type_matcher:
+                    type_name, label = type_matcher.match_type(ev)
+                    if type_name:
+                        # Use template type name directly (user-defined, no enum conversion)
+                        event_dict["type"] = type_name
+                    if label:
+                        event_dict["label"] = label
+
+                    # Check for time period resolution (e.g., "CCSC AM")
+                    period_start, period_end = type_matcher.resolve_time_periods(
+                        ev, type_name
+                    )
+                    if period_start and period_end:
+                        # Convert to timed event with period times
+                        event_dict["start"] = period_start
+                        event_dict["end"] = period_end
+
+                events.append(event_dict)
 
     return events
 
@@ -184,12 +295,12 @@ def normalize_to_docx(path: str | Path) -> str:
 class WordReader:
     """Reader for Word document calendar files."""
 
-    def read(self, path: Path) -> Calendar:
+    def read(self, path: Path, template: CalendarTemplate | None = None) -> Calendar:
         """Read calendar from Word document."""
         try:
             docx_path = normalize_to_docx(path)
             try:
-                return self._read_docx(docx_path)
+                return self._read_docx(docx_path, template)
             finally:
                 # Clean up temporary docx file if it was created
                 if docx_path != str(path):
@@ -200,11 +311,15 @@ class WordReader:
         except Exception as e:
             raise IngestionError(f"Failed to read Word document: {e}") from e
 
-    def _read_docx(self, docx_path: str) -> Calendar:
+    def _read_docx(self, docx_path: str, template: CalendarTemplate) -> Calendar:
         """Read calendar from .docx file."""
         logger.info(f"Reading Word document: {docx_path}")
+        logger.info(f"Using template: {template.name} (version {template.version})")
         doc = Document(str(docx_path))
         events = []
+
+        # Create type matcher if template provided
+        type_matcher = TypeMatcher(template) if template else None
 
         # Extract revised date
         revised_date = extract_revised_date(doc)
@@ -246,13 +361,13 @@ class WordReader:
                 for cell in row.cells:
                     cell_text = cell.text.strip()
                     if cell_text:
-                        events.extend(parse_cell_events(cell_text, month, year))
+                        events.extend(
+                            parse_cell_events(cell_text, month, year, type_matcher)
+                        )
 
         # Filter out any events after December 31 of the target year
         events = [
-            e
-            for e in events
-            if datetime.strptime(e["date"], "%Y-%m-%d") <= cutoff_date
+            e for e in events if datetime.strptime(e["date"], "%Y-%m-%d") <= cutoff_date
         ]
 
         # Remove misattributed New Year's Day on Dec 1
@@ -274,7 +389,7 @@ class WordReader:
                 raise IngestionError(
                     f"Failed to create event from {event_dict}: {e}"
                 ) from e
-        
+
         logger.info(f"Created {len(event_models)} event models from Word document")
 
         # Validate single year

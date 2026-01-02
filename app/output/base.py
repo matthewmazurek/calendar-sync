@@ -3,13 +3,13 @@
 from pathlib import Path
 from typing import Protocol
 
-from app.models.calendar import Calendar
+from app.models.metadata import CalendarWithMetadata
 
 
 class CalendarWriter(Protocol):
     """Protocol for calendar writers."""
 
-    def write(self, calendar: Calendar, path: Path) -> None:
+    def write(self, calendar: CalendarWithMetadata, path: Path) -> None:
         """Write calendar to file path."""
         ...
 

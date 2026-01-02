@@ -11,12 +11,13 @@ from app.exceptions import (
     InvalidYearError,
     UnsupportedFormatError,
 )
+from app.models.template_loader import get_template
 from app.processing.calendar_manager import CalendarManager
 from app.storage.calendar_repository import CalendarRepository
 from app.storage.calendar_storage import CalendarStorage
 from app.storage.git_service import GitService
 from cli.setup import setup_reader_registry, setup_writer
-from cli.utils import format_processing_summary
+from cli.utils import format_complete_summary
 
 logger = logging.getLogger(__name__)
 
@@ -49,6 +50,17 @@ def sync_command(
         config.calendar_dir, storage, git_service, reader_registry
     )
 
+    # Load template if configured
+    template = get_template(config.default_template, config.template_dir)
+    if template:
+        logger.info(f"Using template: {template.name} (version {template.version})")
+        if template.extends:
+            logger.info(f"Template extends: {template.extends}")
+    else:
+        logger.info(
+            "No template configured - events will be processed without template rules"
+        )
+
     # Read input file
     input_path = Path(calendar_data_file).expanduser()
     if not input_path.exists():
@@ -66,7 +78,13 @@ def sync_command(
         sys.exit(1)
 
     try:
-        source_calendar = reader.read(input_path)
+        # Pass template to WordReader if it's a WordReader
+        from app.ingestion.word_reader import WordReader
+
+        if isinstance(reader, WordReader) and template:
+            source_calendar = reader.read(input_path, template)
+        else:
+            source_calendar = reader.read(input_path)
 
         # Calculate date range
         if source_calendar.events:
@@ -77,15 +95,15 @@ def sync_command(
         else:
             date_range = "no events"
 
-        # Display ingestion summary with new lines
-        print("Data ingestion:")
-        print(f"  - Format: {file_format} ({reader_name})")
-        print(f"  - Events: {len(source_calendar.events)}")
-        print(f"  - Date range: {date_range}")
-        if source_calendar.year:
-            print(f"  - Year: {source_calendar.year}")
-        if source_calendar.revised_date:
-            print(f"  - Revised date: {source_calendar.revised_date}")
+        # Collect ingestion summary data (will be printed at the end)
+        ingestion_summary = {
+            "format": file_format,
+            "reader_name": reader_name,
+            "events": len(source_calendar.events),
+            "date_range": date_range,
+            "year": source_calendar.year,
+            "revised_date": source_calendar.revised_date,
+        }
         logger.info(f"Ingested {len(source_calendar.events)} events from {input_path}")
     except IngestionError as e:
         logger.error(f"Failed to read calendar file: {e}")
@@ -102,12 +120,12 @@ def sync_command(
 
     if existing is None:
         # Creating new calendar - allow multi-year calendars
-        print(f"Creating new calendar '{calendar_name}'")
+        action_message = f"Creating new calendar '{calendar_name}'"
+        logger.info(action_message)
         try:
             result, processing_summary = manager.create_calendar_from_source(
-                source_calendar, calendar_name
+                source_calendar, calendar_name, template
             )
-            format_processing_summary(processing_summary)
         except InvalidYearError as e:
             logger.error(f"Year validation error: {e}")
             sys.exit(1)
@@ -115,13 +133,21 @@ def sync_command(
         # Save calendar
         writer = setup_writer(format)
         filepath = repository.save_calendar(result.calendar, result.metadata, writer)
-        print(f"Writing: Calendar created at {filepath}")
         logger.info(f"Calendar created: {filepath}")
 
         # Publish to git if requested
         if publish:
             git_service.publish_calendar(calendar_name, filepath, format)
-            print("Publishing: Calendar published to git")
+            logger.info("Calendar published to git")
+
+        # Print complete summary at the end
+        format_complete_summary(
+            ingestion_summary=ingestion_summary,
+            processing_summary=processing_summary,
+            action_message=action_message,
+            filepath=filepath,
+            published=publish,
+        )
     else:
         # Compose with existing calendar - requires year specification
         # Determine year if not specified
@@ -138,12 +164,12 @@ def sync_command(
             else:
                 year = source_calendar.year
 
-        print(f"Updating calendar '{calendar_name}' for year {year}")
+        action_message = f"Updating calendar '{calendar_name}' for year {year}"
+        logger.info(action_message)
         try:
             result, processing_summary = manager.compose_calendar_with_source(
-                calendar_name, source_calendar, year, repository
+                calendar_name, source_calendar, year, repository, template
             )
-            format_processing_summary(processing_summary)
         except CalendarNotFoundError as e:
             logger.error(f"Calendar not found: {e}")
             sys.exit(1)
@@ -154,10 +180,18 @@ def sync_command(
         # Save updated calendar
         writer = setup_writer(format)
         filepath = repository.save_calendar(result.calendar, result.metadata, writer)
-        print(f"Writing: Calendar updated at {filepath}")
         logger.info(f"Calendar updated: {filepath}")
 
         # Publish to git if requested
         if publish:
             git_service.publish_calendar(calendar_name, filepath, format)
-            print("Publishing: Calendar published to git")
+            logger.info("Calendar published to git")
+
+        # Print complete summary at the end
+        format_complete_summary(
+            ingestion_summary=ingestion_summary,
+            processing_summary=processing_summary,
+            action_message=action_message,
+            filepath=filepath,
+            published=publish,
+        )

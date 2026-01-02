@@ -1,11 +1,12 @@
 """Calendar manager with simplified create/compose operations."""
 
 from datetime import datetime
-from typing import Protocol, Tuple
+from typing import Optional, Protocol, Tuple
 
 from app.exceptions import CalendarNotFoundError, InvalidYearError
 from app.models.calendar import Calendar
 from app.models.metadata import CalendarMetadata, CalendarWithMetadata
+from app.models.template import CalendarTemplate
 from app.processing.calendar_merger import replace_year_in_calendar
 from app.processing.calendar_processor import CalendarProcessor
 
@@ -33,7 +34,10 @@ class CalendarManager:
         self.processor = CalendarProcessor()
 
     def create_calendar_from_source(
-        self, source_data: Calendar, calendar_name: str
+        self,
+        source_data: Calendar,
+        calendar_name: str,
+        template: Optional[CalendarTemplate] = None,
     ) -> Tuple[CalendarWithMetadata, dict]:
         """
         Create new calendar from source file (replaces all events).
@@ -41,6 +45,7 @@ class CalendarManager:
         Args:
             source_data: Source calendar data
             calendar_name: Name for the calendar
+            template: Optional template configuration
 
         Returns:
             Tuple of (CalendarWithMetadata, processing_summary_dict)
@@ -49,7 +54,7 @@ class CalendarManager:
         # (Calendar model supports year=None for multi-year calendars)
 
         # Process events
-        processed_calendar, processing_summary = self.processor.process(source_data)
+        processed_calendar, processing_summary = self.processor.process(source_data, template)
 
         # Create metadata
         now = datetime.now()
@@ -71,6 +76,7 @@ class CalendarManager:
         source_data: Calendar,
         year: int,
         repository: CalendarRepository,
+        template: Optional[CalendarTemplate] = None,
     ) -> Tuple[CalendarWithMetadata, dict]:
         """
         Compose existing calendar with source file (replaces all events in specified year).
@@ -80,6 +86,7 @@ class CalendarManager:
             source_data: Source calendar data
             year: Year to replace
             repository: Calendar repository (dependency injection)
+            template: Optional template configuration
 
         Returns:
             Tuple of (CalendarWithMetadata, processing_summary_dict)
@@ -106,7 +113,7 @@ class CalendarManager:
                 )
 
         # Process source events
-        processed_source, processing_summary = self.processor.process(source_data)
+        processed_source, processing_summary = self.processor.process(source_data, template)
 
         # Compose with source file (replaces all events in specified year)
         merged_calendar = replace_year_in_calendar(processed_source, existing, year)

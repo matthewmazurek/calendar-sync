@@ -59,6 +59,10 @@ class Event(BaseModel):
     end: Optional[time] = None
     end_date: Optional[date] = None
     location: Optional[str] = None
+    location_geo: Optional[tuple[float, float]] = None
+    location_apple_title: Optional[str] = None
+    type: Optional[str] = None
+    label: Optional[str] = None
 
     @field_validator("start", "end", mode="before")
     @classmethod
@@ -85,10 +89,13 @@ class Event(BaseModel):
                 raise ValueError("end_date must be >= date")
         return self
 
-    @computed_field
-    @property
-    def type(self) -> EventType:
-        """Automatically detect event type from title."""
+    def get_type_enum(self) -> EventType:
+        """Get event type as enum (for backward compatibility)."""
+        if self.type:
+            try:
+                return EventType(self.type.upper())
+            except ValueError:
+                return EventTypeDetector.detect_type(self.title)
         return EventTypeDetector.detect_type(self.title)
 
     @computed_field
@@ -103,11 +110,6 @@ class Event(BaseModel):
         """True if end_date is set and end_date > date."""
         return self.end_date is not None and self.end_date > self.date
 
-    @computed_field
-    @property
-    def requires_location(self) -> bool:
-        """True based on event type (e.g., Clinic, Endoscopy)."""
-        return self.type in (EventType.CLINIC, EventType.ENDOSCOPY)
 
     class Config:
         """Pydantic config."""

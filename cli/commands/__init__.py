@@ -8,6 +8,7 @@ from cli.commands.ls import ls_command
 from cli.commands.sync import sync_command
 from cli.commands.publish import publish_command
 from cli.commands.restore import restore_command
+from cli.commands.template import template_command
 
 __all__ = [
     "config_command",
@@ -18,4 +19,5 @@ __all__ = [
     "sync_command",
     "publish_command",
     "restore_command",
+    "template_command",
 ]

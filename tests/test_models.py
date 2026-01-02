@@ -52,7 +52,7 @@ def test_event_computed_fields():
     # All-day event
     event1 = Event(title="All Day Event", date=date(2025, 1, 1))
     assert event1.is_all_day is True
-    assert event1.type == EventType.OTHER
+    assert event1.get_type_enum() == EventType.OTHER
 
     # Timed event
     event2 = Event(
@@ -70,10 +70,6 @@ def test_event_computed_fields():
         end_date=date(2025, 1, 2),
     )
     assert event3.is_overnight is True
-
-    # Event requiring location
-    event4 = Event(title="Clinic", date=date(2025, 1, 1))
-    assert event4.requires_location is True
 
 
 def test_calendar_year_validation():

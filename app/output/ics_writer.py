@@ -6,24 +6,30 @@ from pathlib import Path
 
 from icalendar import Alarm, Calendar, Event, vGeo, vText
 
-from app.models.calendar import Calendar as CalendarModel
-from app.models.event import Event as EventModel
-
-WORK_LOCATION = "Foothills Medical Centre, 1403 29 St NW, Calgary AB T2N 2T9, Canada"
+from app.models.metadata import CalendarWithMetadata
 
 
 class ICSWriter:
     """Writer for ICS calendar files."""
 
-    def write(self, calendar: CalendarModel, path: Path) -> None:
+    def write(self, calendar_with_metadata: CalendarWithMetadata, path: Path) -> None:
         """Write calendar to ICS file."""
+        calendar = calendar_with_metadata.calendar
+        metadata = calendar_with_metadata.metadata
+
         cal = Calendar()
         cal.add("prodid", "-//Calendar Sync//EN")
         cal.add("version", "2.0")
 
-        # Add revised date if present
-        if calendar.revised_date:
-            cal.add("X-WR-CALNAME", f"Calendar (Revised {calendar.revised_date})")
+        # Build calendar name from metadata and revision date
+        base_name = metadata.name.title()
+        revised_date = calendar.revised_date or metadata.source_revised_at
+        if revised_date:
+            calendar_name = f"{base_name} (Revised {revised_date})"
+        else:
+            calendar_name = base_name
+
+        cal.add("X-WR-CALNAME", calendar_name)
 
         for event_model in calendar.events:
             event = Event()
@@ -35,25 +41,26 @@ class ICSWriter:
 
             # Add location if present
             if event_model.location:
-                event.add("location", event_model.location)
-                event["LOCATION"] = event_model.location
-
-                # Add geo information for work location
-                if event_model.location == WORK_LOCATION:
-                    event["LOCATION"] = (
-                        "Foothills Medical Centre\n1403 29 St NW, Calgary AB T2N 2T9, Canada"
+                # Add geo information if available in event
+                if event_model.location_geo and event_model.location_apple_title:
+                    # Use vText to ensure proper escaping of newlines
+                    combined_location = (
+                        event_model.location_apple_title + "\n" + event_model.location
                     )
-                    event.add("geo", (51.065389, -114.133306))
+                    event["LOCATION"] = vText(combined_location)
+                    event.add("geo", event_model.location_geo)
                     event.add(
                         "X-APPLE-STRUCTURED-LOCATION",
-                        "geo:51.065389,-114.133306",
+                        f"geo:{event_model.location_geo[0]},{event_model.location_geo[1]}",
                         parameters={
                             "VALUE": "URI",
-                            "X-ADDRESS": "1403 29 St NW, Calgary AB T2N 2T9, Canada",
+                            "X-ADDRESS": event_model.location,
                             "X-APPLE-RADIUS": "49",
-                            "X-TITLE": "Foothills Medical Centre",
+                            "X-TITLE": event_model.location_apple_title,
                         },
                     )
+                else:
+                    event.add("location", event_model.location)
 
             # Convert time objects back to datetime
             date = datetime.combine(event_model.date, datetime.min.time())
@@ -89,8 +96,25 @@ class ICSWriter:
             cal.add_component(event)
 
         # Write to file
-        with open(path, "wb") as f:
-            f.write(cal.to_ical())
+        try:
+            ical_content = cal.to_ical()
+            if not ical_content:
+                raise ValueError("Calendar.to_ical() returned empty content")
+
+            with open(path, "wb") as f:
+                f.write(ical_content)
+
+            # Verify file was written
+            if path.stat().st_size == 0:
+                raise IOError(f"File was created but is empty: {path}")
+        except Exception as e:
+            # Remove empty file if it was created
+            if path.exists() and path.stat().st_size == 0:
+                try:
+                    path.unlink()
+                except OSError:
+                    pass
+            raise
 
     def get_extension(self) -> str:
         """Returns file extension."""

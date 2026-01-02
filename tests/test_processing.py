@@ -1,10 +1,10 @@
 """Tests for processing layer with Pydantic models."""
 
+import shutil
 import subprocess
+import tempfile
 from datetime import date, datetime, time
 from pathlib import Path
-import tempfile
-import shutil
 
 import pytest
 
@@ -20,14 +20,26 @@ from app.processing.event_type_processors import (
 )
 from app.storage.calendar_repository import CalendarRepository
 from app.storage.calendar_storage import CalendarStorage
+from app.storage.git_service import GitService
+from cli.setup import setup_reader_registry
 
 
 def test_oncall_processor():
     """Test on-call event processor."""
     processor = OnCallEventProcessor()
     events = [
-        Event(title="Primary on call", date=date(2025, 1, 1), start=time(8, 0), end=time(17, 0)),
-        Event(title="Primary on call", date=date(2025, 1, 2), start=time(8, 0), end=time(17, 0)),
+        Event(
+            title="Primary on call",
+            date=date(2025, 1, 1),
+            start=time(8, 0),
+            end=time(17, 0),
+        ),
+        Event(
+            title="Primary on call",
+            date=date(2025, 1, 2),
+            start=time(8, 0),
+            end=time(17, 0),
+        ),
     ]
 
     processed = processor.process(events)
@@ -64,7 +76,12 @@ def test_regular_processor():
 def test_process_events_pipeline():
     """Test event processing pipeline."""
     events = [
-        Event(title="Primary on call", date=date(2025, 1, 1), start=time(8, 0), end=time(17, 0)),
+        Event(
+            title="Primary on call",
+            date=date(2025, 1, 1),
+            start=time(8, 0),
+            end=time(17, 0),
+        ),
         Event(title="Clinic", date=date(2025, 1, 2), start=time(9, 0), end=time(10, 0)),
         Event(title="Holiday", date=date(2025, 1, 3)),
     ]
@@ -72,7 +89,7 @@ def test_process_events_pipeline():
     processed, summary = process_events(events)
     assert len(processed) >= 1
     # On-call should be consolidated
-    oncall_events = [e for e in processed if e.type == EventType.ON_CALL]
+    oncall_events = [e for e in processed if e.get_type_enum() == EventType.ON_CALL]
     assert len(oncall_events) == 1
 
 
@@ -92,11 +109,13 @@ def test_source_revised_at_extraction():
             cwd=temp_dir,
             check=True,
         )
-        
+
         config = CalendarConfig()
         config.calendar_dir = temp_dir
         storage = CalendarStorage(config)
-        repository = CalendarRepository(temp_dir, storage)
+        git_service = GitService(temp_dir)
+        reader_registry = setup_reader_registry()
+        repository = CalendarRepository(temp_dir, storage, git_service, reader_registry)
         manager = CalendarManager(repository)
 
         # Create source calendar with revised_date
@@ -105,13 +124,16 @@ def test_source_revised_at_extraction():
         source_calendar = Calendar(events=events, revised_date=revised_date, year=2025)
 
         # Create calendar from source
-        result, _ = manager.create_calendar_from_source(source_calendar, "test_calendar")
+        result, _ = manager.create_calendar_from_source(
+            source_calendar, "test_calendar"
+        )
 
         # Verify source_revised_at is set in metadata
         assert result.metadata.source_revised_at == revised_date
 
         # Save the calendar so it exists for composition
         from app.output.ics_writer import ICSWriter
+
         writer = ICSWriter()
         repository.save_calendar(result.calendar, result.metadata, writer)
 
