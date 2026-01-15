@@ -17,7 +17,7 @@ from app.output.ics_writer import ICSWriter
 from app.storage.calendar_repository import CalendarRepository
 from app.storage.calendar_storage import CalendarStorage
 from app.storage.git_service import GitService
-from cli.setup import setup_reader_registry
+from app import setup_reader_registry
 
 
 @pytest.fixture

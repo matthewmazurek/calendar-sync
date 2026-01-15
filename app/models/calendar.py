@@ -1,7 +1,6 @@
 """Calendar model with Pydantic v2 validation."""
 
 from datetime import date
-from typing import List, Optional
 
 from pydantic import BaseModel, model_validator
 
@@ -11,9 +10,9 @@ from app.models.event import Event
 class Calendar(BaseModel):
     """Calendar model (pure domain model, no metadata)."""
 
-    events: List[Event]
-    revised_date: Optional[date] = None
-    year: Optional[int] = None
+    events: list[Event]
+    revised_date: date | None = None
+    year: int | None = None
 
     @model_validator(mode="after")
     def validate_year(self):

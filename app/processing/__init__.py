@@ -2,22 +2,12 @@
 
 from app.processing.calendar_merger import replace_year_in_calendar
 from app.processing.calendar_processor import CalendarProcessor
-from app.processing.event_processor import process_events
-from app.processing.event_type_processors import (
-    AllDayEventProcessor,
-    EventProcessingPipeline,
-    EventProcessor,
-    OnCallEventProcessor,
-    RegularEventProcessor,
-)
+from app.processing.configurable_processor import ConfigurableEventProcessor
+from app.processing.event_processor import process_events_with_template
 
 __all__ = [
-    "EventProcessor",
-    "EventProcessingPipeline",
-    "OnCallEventProcessor",
-    "AllDayEventProcessor",
-    "RegularEventProcessor",
-    "process_events",
     "CalendarProcessor",
+    "ConfigurableEventProcessor",
+    "process_events_with_template",
     "replace_year_in_calendar",
 ]

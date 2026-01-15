@@ -1,7 +1,6 @@
 """Calendar metadata model with Pydantic v2."""
 
 from datetime import date, datetime
-from typing import List, Optional
 
 from pydantic import BaseModel
 
@@ -12,12 +11,12 @@ class CalendarMetadata(BaseModel):
     """Calendar metadata model."""
 
     name: str
-    source: Optional[str] = None
+    source: str | None = None
     created: datetime
     last_updated: datetime
-    composed_from: Optional[List[str]] = None
+    composed_from: list[str] | None = None
     format: str = "ics"  # "ics" or "json"
-    source_revised_at: Optional[date] = None
+    source_revised_at: date | None = None
 
     class Config:
         """Pydantic config."""

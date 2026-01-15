@@ -7,12 +7,15 @@ from typing import Dict
 logger = logging.getLogger(__name__)
 
 
-def format_processing_summary(processing_summary: Dict) -> None:
+def format_processing_summary(
+    processing_summary: Dict, ingestion_summary: Dict | None = None
+) -> None:
     """
     Format and display processing summary.
 
     Args:
         processing_summary: Dictionary with input_counts, output_counts, input_total, output_total
+        ingestion_summary: Optional dictionary with weekly coverage stats
     """
     if not processing_summary:
         return
@@ -36,75 +39,15 @@ def format_processing_summary(processing_summary: Dict) -> None:
         else:
             print(f"  - Total: {input_total}")
 
-
-def format_complete_summary(
-    ingestion_summary: Dict | None = None,
-    processing_summary: Dict | None = None,
-    action_message: str | None = None,
-    filepath: str | None = None,
-    published: bool = False,
-) -> None:
-    """
-    Format and display complete summary at the end of sync operation.
-
-    Args:
-        ingestion_summary: Dictionary with format, reader_name, events, date_range, year, revised_date
-        processing_summary: Dictionary with input_counts, output_counts, input_total, output_total
-        action_message: Message about calendar creation/update
-        filepath: Path to saved calendar file
-        published: Whether calendar was published to git
-    """
-    print()  # Empty line before summary
-    print("─" * 60)
-    print("Summary")
-    print("─" * 60)
-
     if ingestion_summary:
-        print("Data ingestion:")
-        print(
-            f"  - Format: {ingestion_summary.get('format')} ({ingestion_summary.get('reader_name')})"
-        )
-        print(f"  - Events: {ingestion_summary.get('events')}")
-        print(f"  - Date range: {ingestion_summary.get('date_range')}")
-        if ingestion_summary.get("year"):
-            print(f"  - Year: {ingestion_summary.get('year')}")
-        if ingestion_summary.get("revised_date"):
-            print(f"  - Revised date: {ingestion_summary.get('revised_date')}")
-        print()
-
-    if processing_summary:
-        input_counts = processing_summary.get("input_counts", {})
-        output_counts = processing_summary.get("output_counts", {})
-        input_total = processing_summary.get("input_total", 0)
-        output_total = processing_summary.get("output_total", 0)
-
-        if input_counts:
-            print("Processing (Event type: count):")
-            for event_type, count in sorted(input_counts.items()):
-                output_count = output_counts.get(event_type, 0)
-                if output_count != count:
-                    print(f"  - {event_type}: {count} (Collapsed to {output_count})")
-                else:
-                    print(f"  - {event_type}: {count}")
-
-            if output_total != input_total:
-                print(f"  - Total: {input_total} (Collapsed to {output_total})")
-            else:
-                print(f"  - Total: {input_total}")
-            print()
-
-    if action_message:
-        print(action_message)
-
-    if filepath:
-        # Determine if it's a create or update based on action_message
-        if action_message and "Creating" in action_message:
-            print(f"Writing: Calendar created at {filepath}")
-        else:
-            print(f"Writing: Calendar updated at {filepath}")
-
-    if published:
-        print("Publishing: Calendar published to git")
+        total_halfdays = ingestion_summary.get("total_halfdays")
+        weekly_coverage_year = ingestion_summary.get("weekly_coverage_year")
+        if total_halfdays is not None or weekly_coverage_year is not None:
+            print("Statistics:")
+        if total_halfdays is not None:
+            print(f"  - Half-days booked: {total_halfdays}")
+        if weekly_coverage_year is not None:
+            print(f"  - Coverage: {weekly_coverage_year:.1f} half days per week")
 
 
 def format_relative_time(commit_date: datetime) -> str:

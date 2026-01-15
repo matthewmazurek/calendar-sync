@@ -4,6 +4,8 @@ import logging
 import tempfile
 from pathlib import Path
 
+from app.utils import temp_file_path
+
 try:
     from flask import Flask, Response, jsonify, request
 except ImportError:
@@ -17,13 +19,37 @@ from app.exceptions import (
     InvalidYearError,
     UnsupportedFormatError,
 )
+from app.ingestion.base import ReaderRegistry
+from app.ingestion.ics_reader import ICSReader
+from app.ingestion.json_reader import JSONReader
+from app.ingestion.word_reader import WordReader
+from app.output.ics_writer import ICSWriter
+from app.output.json_writer import JSONWriter
 from app.processing.calendar_manager import CalendarManager
 from app.storage.calendar_repository import CalendarRepository
 from app.storage.calendar_storage import CalendarStorage
 from app.storage.git_service import GitService
-from cli.setup import setup_reader_registry, setup_writer
 
 logger = logging.getLogger(__name__)
+
+
+def setup_reader_registry() -> ReaderRegistry:
+    """Set up reader registry with all readers."""
+    registry = ReaderRegistry()
+    registry.register(WordReader(), [".doc", ".docx"])
+    registry.register(ICSReader(), [".ics"])
+    registry.register(JSONReader(), [".json"])
+    return registry
+
+
+def setup_writer(format: str):
+    """Get writer for format."""
+    if format == "ics":
+        return ICSWriter()
+    elif format == "json":
+        return JSONWriter()
+    else:
+        raise UnsupportedFormatError(f"Unsupported output format: {format}")
 
 
 def create_app():
@@ -108,7 +134,8 @@ def create_app():
 
             # Read source calendar
             try:
-                source_calendar = reader.read(temp_path)
+                ingestion_result = reader.read(temp_path)
+                source_calendar = ingestion_result.calendar
             except (IngestionError, InvalidYearError) as e:
                 return handle_error(e)
 
@@ -252,12 +279,7 @@ def create_app():
             writer = setup_writer(format_param)
 
             # Write to temp file to get bytes
-            with tempfile.NamedTemporaryFile(
-                delete=False, suffix=f".{format_param}"
-            ) as temp:
-                temp_path = Path(temp.name)
-
-            try:
+            with temp_file_path(suffix=f".{format_param}") as temp_path:
                 writer.write(calendar_with_metadata, temp_path)
                 content = temp_path.read_bytes()
 
@@ -276,11 +298,6 @@ def create_app():
                         "Content-Disposition": f'attachment; filename="{filename}"'
                     },
                 )
-            finally:
-                try:
-                    temp_path.unlink()
-                except OSError:
-                    pass
 
         except Exception as e:
             return handle_error(e)
@@ -289,7 +306,9 @@ def create_app():
     def list_calendars():
         """List all calendars."""
         try:
-            include_deleted = request.args.get("include_deleted", "false").lower() == "true"
+            include_deleted = (
+                request.args.get("include_deleted", "false").lower() == "true"
+            )
             calendars = repository.list_calendars(include_deleted=include_deleted)
 
             # Get metadata for each calendar
@@ -301,8 +320,16 @@ def create_app():
                     calendar_list.append(
                         {
                             "name": cal_name,
-                            "created": metadata.created.isoformat() if metadata.created else None,
-                            "last_updated": metadata.last_updated.isoformat() if metadata.last_updated else None,
+                            "created": (
+                                metadata.created.isoformat()
+                                if metadata.created
+                                else None
+                            ),
+                            "last_updated": (
+                                metadata.last_updated.isoformat()
+                                if metadata.last_updated
+                                else None
+                            ),
                             "format": metadata.format,
                         }
                     )

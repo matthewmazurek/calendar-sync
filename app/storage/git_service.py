@@ -1,11 +1,9 @@
 """Unified git service for calendar operations."""
 
 import logging
-import re
 import sys
 from datetime import datetime
 from pathlib import Path
-from typing import List, Optional, Tuple
 
 from app.constants import CALENDAR_EXTENSIONS, METADATA_FILENAME
 from app.exceptions import GitCommandError, GitError, GitRepositoryNotFoundError
@@ -20,8 +18,8 @@ class GitService:
     def __init__(
         self,
         repo_root: Path,
-        remote_url: Optional[str] = None,
-        git_client: Optional[GitClient] = None,
+        remote_url: str | None = None,
+        git_client: GitClient | None = None,
     ):
         """
         Initialize GitService.
@@ -58,7 +56,7 @@ class GitService:
         )
         return result.returncode == 0 and result.stdout.strip() == "true"
 
-    def _get_repo_root(self) -> Optional[Path]:
+    def _get_repo_root(self) -> Path | None:
         """Get git repository root directory."""
         result = self.git_client.run_command(
             ["git", "rev-parse", "--show-toplevel"], self.repo_root
@@ -67,7 +65,7 @@ class GitService:
             return Path(result.stdout.strip())
         return None
 
-    def _get_remote_url(self, remote_name: str = "origin") -> Optional[str]:
+    def _get_remote_url(self, remote_name: str = "origin") -> str | None:
         """Get remote URL from git config."""
         result = self.git_client.run_command(
             ["git", "remote", "get-url", remote_name], self.repo_root
@@ -90,7 +88,7 @@ class GitService:
 
     # Version operations (from GitVersionService)
 
-    def get_file_versions(self, file_path: Path) -> List[Tuple[str, datetime, str]]:
+    def get_file_versions(self, file_path: Path) -> list[tuple[str, datetime, str]]:
         """
         Get git log for a specific file.
 
@@ -126,9 +124,10 @@ class GitService:
                     message = parts[2]
 
                     # Parse date: "2025-01-01 12:00:00 -0500"
+                    # Include timezone offset for correct UTC conversion
                     commit_date = datetime.strptime(
-                        date_str.split(" ")[0] + " " + date_str.split(" ")[1],
-                        "%Y-%m-%d %H:%M:%S",
+                        date_str,
+                        "%Y-%m-%d %H:%M:%S %z",
                     )
                     versions.append((commit_hash, commit_date, message))
             except (ValueError, IndexError) as e:
@@ -137,7 +136,7 @@ class GitService:
 
         return versions
 
-    def get_file_at_commit(self, file_path: Path, commit: str) -> Optional[bytes]:
+    def get_file_at_commit(self, file_path: Path, commit: str) -> bytes | None:
         """
         Get file content at specific commit without checking out.
 
@@ -153,7 +152,8 @@ class GitService:
 
         rel_path = self._get_relative_path(file_path)
 
-        result = self.git_client.run_command(
+        # Use binary mode to preserve exact bytes for accurate comparison
+        result = self.git_client.run_command_binary(
             ["git", "show", f"{commit}:{rel_path}"], self.repo_root
         )
 
@@ -161,7 +161,7 @@ class GitService:
             logger.warning(f"Git show failed: {result.stderr}")
             return None
 
-        return result.stdout.encode("utf-8")
+        return result.stdout
 
     def restore_file_version(self, file_path: Path, commit: str) -> bool:
         """
@@ -238,7 +238,7 @@ class GitService:
         # Exit code 0 means file matches HEAD
         return result.returncode == 0
 
-    def get_current_commit_hash(self, file_path: Path) -> Optional[str]:
+    def get_current_commit_hash(self, file_path: Path) -> str | None:
         """
         Get the commit hash that the current working file matches.
 
@@ -283,7 +283,7 @@ class GitService:
         # File has uncommitted changes (doesn't match any commit)
         return None
 
-    def get_remote_url(self, remote_name: str = "origin") -> Optional[str]:
+    def get_remote_url(self, remote_name: str = "origin") -> str | None:
         """
         Get the URL of a git remote.
 

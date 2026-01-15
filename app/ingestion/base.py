@@ -4,13 +4,13 @@ from pathlib import Path
 from typing import Dict, List, Protocol
 
 from app.exceptions import UnsupportedFormatError
-from app.models.calendar import Calendar
+from app.models.ingestion import IngestionResult
 
 
 class CalendarReader(Protocol):
     """Protocol for calendar readers."""
 
-    def read(self, path: Path) -> Calendar:
+    def read(self, path: Path) -> IngestionResult:
         """Read calendar from file path."""
         ...
 

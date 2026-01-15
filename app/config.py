@@ -2,7 +2,6 @@
 
 import os
 from pathlib import Path
-from typing import Optional
 
 from pydantic import BaseModel, Field
 
@@ -18,8 +17,8 @@ class CalendarConfig(BaseModel):
     default_format: str = Field(default="ics")
     calendar_dir: Path = Field(default=Path("data/calendars"))
     ls_default_limit: int = Field(default=5, ge=1)
-    calendar_git_remote_url: Optional[str] = None
-    default_template: Optional[str] = None
+    calendar_git_remote_url: str | None = None
+    default_template: str | None = None
     template_dir: Path = Field(default=Path("data/templates"))
 
     @classmethod
@@ -41,7 +40,9 @@ class CalendarConfig(BaseModel):
             except ValueError:
                 pass  # Keep default if invalid
         if "CALENDAR_GIT_REMOTE_URL" in os.environ:
-            config_dict["calendar_git_remote_url"] = os.environ["CALENDAR_GIT_REMOTE_URL"]
+            config_dict["calendar_git_remote_url"] = os.environ[
+                "CALENDAR_GIT_REMOTE_URL"
+            ]
         if "DEFAULT_TEMPLATE" in os.environ:
             config_dict["default_template"] = os.environ["DEFAULT_TEMPLATE"]
         if "TEMPLATE_DIR" in os.environ:

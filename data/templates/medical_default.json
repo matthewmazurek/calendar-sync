@@ -11,7 +11,12 @@
     },
     "defaults": {
         "location": null,
-        "consolidate": "title",
+        "consolidate": {
+            "group_by": "title",
+            "pattern_aware": false,
+            "only_all_day": true,
+            "require_same_times": false
+        },
         "overnight": "split",
         "time_periods": {
             "AM": [
@@ -52,7 +57,7 @@
                 ],
                 "PM": [
                     "1230",
-                    "1430"
+                    "1630"
                 ]
             }
         },
@@ -67,7 +72,7 @@
                 ],
                 "PM": [
                     "1230",
-                    "1430"
+                    "1630"
                 ]
             }
         },

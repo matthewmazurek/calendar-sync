@@ -3,7 +3,6 @@
 import json
 import logging
 from pathlib import Path
-from typing import Optional
 
 from app.models.template import CalendarTemplate
 
@@ -16,24 +15,30 @@ _template_cache: dict[str, CalendarTemplate] = {}
 def _merge_template_data(base_data: dict, extending_data: dict) -> dict:
     """
     Merge extending template data over base template data.
-    
+
     Args:
         base_data: Base template data
         extending_data: Extending template data
-        
+
     Returns:
         Merged template data
     """
     merged = base_data.copy()
-    
+
     # Merge settings
     if "settings" in extending_data:
-        merged["settings"] = {**base_data.get("settings", {}), **extending_data["settings"]}
-    
+        merged["settings"] = {
+            **base_data.get("settings", {}),
+            **extending_data["settings"],
+        }
+
     # Merge locations (extending locations override base locations)
     if "locations" in extending_data:
-        merged["locations"] = {**base_data.get("locations", {}), **extending_data["locations"]}
-    
+        merged["locations"] = {
+            **base_data.get("locations", {}),
+            **extending_data["locations"],
+        }
+
     # Merge defaults
     if "defaults" in extending_data:
         base_defaults = base_data.get("defaults", {})
@@ -44,23 +49,23 @@ def _merge_template_data(base_data: dict, extending_data: dict) -> dict:
             # Deep merge time_periods
             "time_periods": {
                 **base_defaults.get("time_periods", {}),
-                **extending_defaults.get("time_periods", {})
-            }
+                **extending_defaults.get("time_periods", {}),
+            },
         }
-    
+
     # Merge types (extending types override base types)
     if "types" in extending_data:
         merged["types"] = {**base_data.get("types", {}), **extending_data["types"]}
-    
+
     # Override name and version from extending template
     if "name" in extending_data:
         merged["name"] = extending_data["name"]
     if "version" in extending_data:
         merged["version"] = extending_data["version"]
-    
+
     # Remove extends field from merged result (it's only used during loading)
     merged.pop("extends", None)
-    
+
     return merged
 
 
@@ -93,7 +98,7 @@ def load_template(template_name: str, template_dir: Path) -> CalendarTemplate:
     try:
         with open(template_path, "r") as f:
             data = json.load(f)
-        
+
         # Check if template extends another template
         extends_name = data.get("extends")
         if extends_name:
@@ -110,7 +115,7 @@ def load_template(template_name: str, template_dir: Path) -> CalendarTemplate:
             template = CalendarTemplate(**merged_data)
         else:
             template = CalendarTemplate(**data)
-        
+
         _template_cache[cache_key] = template
         logger.info(f"Loaded template: {template_name} from {template_path}")
         return template
@@ -120,19 +125,38 @@ def load_template(template_name: str, template_dir: Path) -> CalendarTemplate:
         raise ValueError(f"Failed to load template {template_path}: {e}") from e
 
 
-def get_template(template_name: Optional[str], template_dir: Path) -> Optional[CalendarTemplate]:
+def build_default_template() -> CalendarTemplate:
+    """Build a minimal fallback template with no intervention."""
+    return CalendarTemplate(
+        name="default_fallback",
+        version="1.0",
+        settings={"time_format": "12h"},
+        locations={},
+        defaults={
+            "consolidate": False,
+            "overnight": "keep",
+            "time_periods": {},
+        },
+        types={},
+    )
+
+
+def get_template(template_name: str | None, template_dir: Path) -> CalendarTemplate:
     """
-    Get a template by name, or None if name is None.
+    Get a template by name, or return a minimal fallback if name is None.
 
     Args:
         template_name: Name of template (without .json extension), or None
         template_dir: Directory containing template files
 
     Returns:
-        CalendarTemplate or None
+        CalendarTemplate
     """
     if template_name is None:
-        return None
+        logger.warning(
+            "No template configured - using minimal fallback (no consolidation or time inference)."
+        )
+        return build_default_template()
     return load_template(template_name, template_dir)
 
 

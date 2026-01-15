@@ -38,7 +38,8 @@ def test_word_reader():
         pytest.skip("Fixture file not found")
 
     reader = WordReader()
-    calendar = reader.read(fixture_path)
+    ingestion_result = reader.read(fixture_path)
+    calendar = ingestion_result.calendar
 
     assert isinstance(calendar, Calendar)
     assert len(calendar.events) > 0
@@ -58,7 +59,8 @@ def test_word_reader_single_year_validation():
         pytest.skip("Fixture file not found")
 
     reader = WordReader()
-    calendar = reader.read(fixture_path)
+    ingestion_result = reader.read(fixture_path)
+    calendar = ingestion_result.calendar
 
     # Should have a single year
     years = {event.date.year for event in calendar.events}
@@ -86,7 +88,8 @@ END:VCALENDAR"""
 
     try:
         reader = ICSReader()
-        calendar = reader.read(temp_path)
+        ingestion_result = reader.read(temp_path)
+        calendar = ingestion_result.calendar
 
         assert isinstance(calendar, Calendar)
         assert len(calendar.events) == 1
@@ -105,7 +108,8 @@ def test_ics_reader_empty_file():
     temp_path.unlink()  # Delete the file
 
     reader = ICSReader()
-    calendar = reader.read(temp_path)
+    ingestion_result = reader.read(temp_path)
+    calendar = ingestion_result.calendar
 
     assert isinstance(calendar, Calendar)
     assert len(calendar.events) == 0
@@ -133,7 +137,8 @@ def test_json_reader():
 
     try:
         reader = JSONReader()
-        calendar = reader.read(temp_path)
+        ingestion_result = reader.read(temp_path)
+        calendar = ingestion_result.calendar
 
         assert isinstance(calendar, Calendar)
         assert len(calendar.events) == 1

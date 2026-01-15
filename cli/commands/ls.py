@@ -1,49 +1,56 @@
 """List calendars or versions."""
 
-from app.config import CalendarConfig
-from app.storage.calendar_repository import CalendarRepository
-from app.storage.calendar_storage import CalendarStorage
-from app.storage.git_service import GitService
-from cli.setup import setup_reader_registry
+from datetime import timezone
+
+import typer
+from typing_extensions import Annotated
+
+from cli.context import get_context
 from cli.utils import format_file_size, format_relative_time
 
 
-def ls_command(
-    name: str | None = None,
-    include_archived: bool = False,
-    show_info: bool = False,
-    limit: int | None = None,
-    show_all: bool = False,
+def ls(
+    name: Annotated[
+        str | None,
+        typer.Argument(
+            help="Calendar name. If provided, lists versions for that calendar."
+        ),
+    ] = None,
+    show_all: Annotated[
+        bool,
+        typer.Option("--all", "-a", help="Show all versions (overrides --limit)"),
+    ] = False,
+    include_archived: Annotated[
+        bool,
+        typer.Option("--archived", help="Include archived calendars"),
+    ] = False,
+    show_info: Annotated[
+        bool,
+        typer.Option(
+            "--long",
+            "-l",
+            help="Show detailed information (file path, size, event count)",
+        ),
+    ] = False,
+    limit: Annotated[
+        int | None,
+        typer.Option("--limit", "-n", help="Limit number of versions to show"),
+    ] = None,
 ) -> None:
-    """
-    List calendars or versions.
+    """List calendars or versions.
 
-    If name is provided, list versions for that calendar.
-    Otherwise, list all calendars.
-
-    Args:
-        name: Calendar name (optional)
-        include_archived: If True, include archived calendars in the list
-        show_info: If True, show detailed information (file path, size, event count)
-        limit: Limit number of versions to show (None = use config default)
-        show_all: If True, show all versions (overrides limit)
+    If NAME is provided, lists versions for that calendar.
+    Otherwise, lists all calendars.
     """
-    config = CalendarConfig.from_env()
-    storage = CalendarStorage(config)
-    reader_registry = setup_reader_registry()
-    git_service = GitService(
-        config.calendar_dir,
-        remote_url=config.calendar_git_remote_url,
-    )
-    repository = CalendarRepository(
-        config.calendar_dir, storage, git_service, reader_registry
-    )
+    ctx = get_context()
+    config = ctx.config
+    repository = ctx.repository
 
     if name is None:
         # List all calendars
         calendars = repository.list_calendars(include_deleted=include_archived)
         if not calendars:
-            print("No calendars found")
+            typer.echo("No calendars found")
             return
 
         # Count archived calendars (archived calendars not shown)
@@ -54,7 +61,7 @@ def ls_command(
         else:
             archived_count = 0
 
-        print(
+        typer.echo(
             f"Listing calendars at {config.calendar_dir} ({archived_count} archived):"
         )
         for cal_name in calendars:
@@ -64,14 +71,14 @@ def ls_command(
             if show_info:
                 # Show directory path
                 dir_path = str(calendar_dir)
-                print(f"  {cal_name}  ({dir_path}){archived_marker}")
+                typer.echo(f"  {cal_name}  ({dir_path}){archived_marker}")
             else:
-                print(f"  {cal_name}{archived_marker}")
+                typer.echo(f"  {cal_name}{archived_marker}")
     else:
         # List versions for specific calendar
         all_versions = repository.list_calendar_versions(name)
         if not all_versions:
-            print(f"No versions found for calendar '{name}'")
+            typer.echo(f"No versions found for calendar '{name}'")
             return
 
         # Apply pagination
@@ -90,7 +97,6 @@ def ls_command(
 
         # Get calendar directory path for display
         calendar_dir = repository._get_calendar_dir(name)
-        dir_path = str(calendar_dir)
 
         # Determine calendar file path (check both formats)
         git_service = repository.git_service
@@ -113,10 +119,10 @@ def ls_command(
         except ValueError:
             file_path_str = str(calendar_path)
 
-        print(
+        typer.echo(
             f"Versions for calendar '{name}' ({file_path_str}) ({total_versions} total):"
         )
-        print()
+        typer.echo()
 
         # Find which commit the current file matches
         current_commit_hash = None
@@ -129,15 +135,13 @@ def ls_command(
         except Exception:
             pass
 
-        # calendar_path already determined above for header display
-
         # Print table header
         if show_info:
-            print(
+            typer.echo(
                 f"{'#':>4}  {'HASH':<8}  {'DATE':<19}  {'TIME':<8}  {'SIZE':<8}  {'EVENTS':>6}  {'PATH'}"
             )
         else:
-            print(f"{'#':>4}  {'HASH':<8}  {'DATE':<19}  {'TIME':<8}")
+            typer.echo(f"{'#':>4}  {'HASH':<8}  {'DATE':<19}  {'TIME':<8}")
 
         for idx, (commit_hash, commit_date, commit_message) in enumerate(versions, 1):
             short_hash = commit_hash[:7]
@@ -145,14 +149,12 @@ def ls_command(
 
             # Format actual date/time
             if commit_date.tzinfo is None:
-                from datetime import timezone
-
                 commit_date = commit_date.replace(tzinfo=timezone.utc)
             date_str = commit_date.strftime("%Y-%m-%d %H:%M:%S")
             time_str = relative_time
 
             # Get detailed info if --info flag is set
-            file_path_str = ""
+            file_path_display = ""
             file_size_str = ""
             event_count = None
 
@@ -161,9 +163,9 @@ def ls_command(
                     # Get relative path from repo root
                     try:
                         rel_path = calendar_path.relative_to(repo_root)
-                        file_path_str = str(rel_path)
+                        file_path_display = str(rel_path)
                     except ValueError:
-                        file_path_str = str(calendar_path)
+                        file_path_display = str(calendar_path)
 
                     # Get file content to calculate size and event count
                     calendar_content = git_service.get_file_at_commit(
@@ -188,18 +190,18 @@ def ls_command(
             if show_info:
                 # Detailed output with file path and size
                 event_count_str = str(event_count) if event_count is not None else "-"
-                print(
-                    f"{version_num:>4}  {short_hash:<8}  {date_str:<19}  {time_str:<8}  {file_size_str:<8}  {event_count_str:>6}  {file_path_str}{current_marker}"
+                typer.echo(
+                    f"{version_num:>4}  {short_hash:<8}  {date_str:<19}  {time_str:<8}  {file_size_str:<8}  {event_count_str:>6}  {file_path_display}{current_marker}"
                 )
             else:
                 # Standard output (no event count for efficiency)
-                print(
+                typer.echo(
                     f"{version_num:>4}  {short_hash:<8}  {date_str:<19}  {time_str:<8}{current_marker}"
                 )
 
         # Show truncation message if applicable
         if truncated:
-            print()
-            print(
+            typer.echo()
+            typer.echo(
                 f"... (showing {len(versions)} of {total_versions} versions, use --all to see all)"
             )

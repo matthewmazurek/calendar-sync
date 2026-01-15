@@ -3,94 +3,17 @@
 import shutil
 import subprocess
 import tempfile
-from datetime import date, datetime, time
+from datetime import date
 from pathlib import Path
 
-import pytest
-
+from app import setup_reader_registry
 from app.config import CalendarConfig
 from app.models.calendar import Calendar
-from app.models.event import Event, EventType
+from app.models.event import Event
 from app.processing.calendar_manager import CalendarManager
-from app.processing.event_processor import process_events
-from app.processing.event_type_processors import (
-    AllDayEventProcessor,
-    OnCallEventProcessor,
-    RegularEventProcessor,
-)
 from app.storage.calendar_repository import CalendarRepository
 from app.storage.calendar_storage import CalendarStorage
 from app.storage.git_service import GitService
-from cli.setup import setup_reader_registry
-
-
-def test_oncall_processor():
-    """Test on-call event processor."""
-    processor = OnCallEventProcessor()
-    events = [
-        Event(
-            title="Primary on call",
-            date=date(2025, 1, 1),
-            start=time(8, 0),
-            end=time(17, 0),
-        ),
-        Event(
-            title="Primary on call",
-            date=date(2025, 1, 2),
-            start=time(8, 0),
-            end=time(17, 0),
-        ),
-    ]
-
-    processed = processor.process(events)
-    assert len(processed) == 1
-    assert processed[0].end_date == date(2025, 1, 2)
-    assert processed[0].is_all_day is True
-
-
-def test_allday_processor():
-    """Test all-day event processor."""
-    processor = AllDayEventProcessor()
-    events = [
-        Event(title="Holiday", date=date(2025, 1, 1)),
-        Event(title="Holiday", date=date(2025, 1, 2)),
-    ]
-
-    processed = processor.process(events)
-    assert len(processed) == 1
-    assert processed[0].end_date == date(2025, 1, 2)
-
-
-def test_regular_processor():
-    """Test regular event processor."""
-    processor = RegularEventProcessor()
-    events = [
-        Event(title="Clinic", date=date(2025, 1, 1), start=time(9, 0), end=time(10, 0)),
-    ]
-
-    processed = processor.process(events)
-    assert len(processed) == 1
-    assert processed[0].location is not None
-
-
-def test_process_events_pipeline():
-    """Test event processing pipeline."""
-    events = [
-        Event(
-            title="Primary on call",
-            date=date(2025, 1, 1),
-            start=time(8, 0),
-            end=time(17, 0),
-        ),
-        Event(title="Clinic", date=date(2025, 1, 2), start=time(9, 0), end=time(10, 0)),
-        Event(title="Holiday", date=date(2025, 1, 3)),
-    ]
-
-    processed, summary = process_events(events)
-    assert len(processed) >= 1
-    # On-call should be consolidated
-    oncall_events = [e for e in processed if e.get_type_enum() == EventType.ON_CALL]
-    assert len(oncall_events) == 1
 
 
 def test_source_revised_at_extraction():

@@ -3,7 +3,6 @@
 import json
 from datetime import datetime
 from pathlib import Path
-from typing import List, Optional, Tuple
 
 from app.exceptions import CalendarNotFoundError
 from app.ingestion.base import ReaderRegistry
@@ -53,7 +52,7 @@ class CalendarRepository:
 
     def load_calendar(
         self, name: str, format: str = "ics"
-    ) -> Optional[CalendarWithMetadata]:
+    ) -> CalendarWithMetadata | None:
         """
         Load calendar by name.
 
@@ -69,7 +68,8 @@ class CalendarRepository:
 
         # Load calendar using appropriate reader
         reader = self.reader_registry.get_reader(calendar_path)
-        calendar = reader.read(calendar_path)
+        ingestion_result = reader.read(calendar_path)
+        calendar = ingestion_result.calendar
 
         # Load metadata
         metadata = self.load_metadata(name)
@@ -86,7 +86,7 @@ class CalendarRepository:
 
     def load_calendar_by_commit(
         self, name: str, commit: str, format: str = "ics"
-    ) -> Optional[CalendarWithMetadata]:
+    ) -> CalendarWithMetadata | None:
         """
         Load calendar from specific git commit.
 
@@ -106,18 +106,15 @@ class CalendarRepository:
             return None
 
         # Write to temp file for reading
-        import tempfile
+        from app.utils import temp_file_path
 
-        with tempfile.NamedTemporaryFile(
-            mode="wb", suffix=f".{format}", delete=False
-        ) as tmp_file:
-            tmp_file.write(content)
-            tmp_path = Path(tmp_file.name)
+        with temp_file_path(suffix=f".{format}") as tmp_path:
+            tmp_path.write_bytes(content)
 
-        try:
             # Load calendar using appropriate reader
             reader = self.reader_registry.get_reader(tmp_path)
-            calendar = reader.read(tmp_path)
+            ingestion_result = reader.read(tmp_path)
+            calendar = ingestion_result.calendar
 
             # Load metadata (use current metadata)
             metadata = self.load_metadata(name)
@@ -130,12 +127,6 @@ class CalendarRepository:
                 )
 
             return CalendarWithMetadata(calendar=calendar, metadata=metadata)
-        finally:
-            # Clean up temp file
-            try:
-                tmp_path.unlink()
-            except OSError:
-                pass
 
     def save_calendar(
         self, calendar: Calendar, metadata: CalendarMetadata, writer: CalendarWriter
@@ -159,8 +150,12 @@ class CalendarRepository:
         metadata.last_updated = datetime.now()
 
         # Save calendar file
-        calendar_with_metadata = CalendarWithMetadata(calendar=calendar, metadata=metadata)
-        filepath = self.storage.save_calendar(calendar_with_metadata, writer, calendar_dir)
+        calendar_with_metadata = CalendarWithMetadata(
+            calendar=calendar, metadata=metadata
+        )
+        filepath = self.storage.save_calendar(
+            calendar_with_metadata, writer, calendar_dir
+        )
 
         # Save metadata
         self.save_metadata(metadata)
@@ -178,7 +173,7 @@ class CalendarRepository:
         with open(metadata_path, "w", encoding="utf-8") as f:
             json.dump(metadata.model_dump(), f, indent=2, default=str)
 
-    def load_metadata(self, name: str) -> Optional[CalendarMetadata]:
+    def load_metadata(self, name: str) -> CalendarMetadata | None:
         """Load metadata.json."""
         metadata_path = self._get_metadata_path(name)
         if not metadata_path.exists():
@@ -191,7 +186,7 @@ class CalendarRepository:
         except (OSError, ValueError, KeyError):
             return None
 
-    def list_calendars(self, include_deleted: bool = False) -> List[str]:
+    def list_calendars(self, include_deleted: bool = False) -> list[str]:
         """
         List all available calendar names.
 
@@ -249,7 +244,7 @@ class CalendarRepository:
 
     def list_calendar_versions(
         self, name: str, format: str = "ics"
-    ) -> List[Tuple[str, datetime, str]]:
+    ) -> list[tuple[str, datetime, str]]:
         """
         List all versions from git log.
 
@@ -270,7 +265,7 @@ class CalendarRepository:
 
             shutil.rmtree(calendar_dir)
 
-    def get_calendar_path(self, name: str, format: str = "ics") -> Optional[Path]:
+    def get_calendar_path(self, name: str, format: str = "ics") -> Path | None:
         """
         Get path to calendar file.
 

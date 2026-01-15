@@ -1,35 +1,39 @@
 """Display available templates and template directory."""
 
+import json
 from pathlib import Path
 
-from app.config import CalendarConfig
+import typer
+
 from app.models.template_loader import load_template
+from cli.context import get_context
 
 
-def template_command() -> None:
+def template() -> None:
     """Display available templates and template directory."""
-    config = CalendarConfig.from_env()
+    ctx = get_context()
+    config = ctx.config
     template_dir = config.template_dir
 
     # Display template directory
-    print("Template Directory:")
-    print(f"  Path: {template_dir.resolve()}")
-    print()
+    typer.echo("Template Directory:")
+    typer.echo(f"  Path: {template_dir.resolve()}")
+    typer.echo()
 
     # Find all template files
     if not template_dir.exists():
-        print("No templates found (directory does not exist)")
+        typer.echo("No templates found (directory does not exist)")
         return
 
     template_files = sorted(template_dir.glob("*.json"))
 
     if not template_files:
-        print("No templates found")
+        typer.echo("No templates found")
         return
 
     # Display available templates header
-    print(f"Available Templates ({len(template_files)}):")
-    print()
+    typer.echo(f"Available Templates ({len(template_files)}):")
+    typer.echo()
 
     # Collect template data
     templates_data = []
@@ -47,8 +51,6 @@ def template_command() -> None:
         # Read extends from JSON file first (before loading/merging)
         extends = None
         try:
-            import json
-
             with open(template_file, "r") as f:
                 raw_data = json.load(f)
                 extends = raw_data.get("extends")
@@ -57,10 +59,10 @@ def template_command() -> None:
 
         # Try to load template to get details
         try:
-            template = load_template(template_name, template_dir)
-            version = template.version
-            event_type_count = len(template.types) if template.types else 0
-            location_count = len(template.locations) if template.locations else 0
+            template_obj = load_template(template_name, template_dir)
+            version = template_obj.version
+            event_type_count = len(template_obj.types) if template_obj.types else 0
+            location_count = len(template_obj.locations) if template_obj.locations else 0
 
             templates_data.append(
                 {
@@ -87,7 +89,7 @@ def template_command() -> None:
             )
 
     # Print table header
-    print(
+    typer.echo(
         f"{'NAME':<20}  {'VERSION':<10}  {'TYPES':>6}  {'LOCATIONS':>9}  {'EXTENDS':<15}  {'PATH'}"
     )
 
@@ -100,6 +102,6 @@ def template_command() -> None:
         extends = template_data.get("extends") or ""
         path = template_data["path"]
 
-        print(
+        typer.echo(
             f"{name:<20}  {version:<10}  {event_types:>6}  {locations:>9}  {extends:<15}  {path}"
         )

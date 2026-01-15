@@ -3,7 +3,6 @@
 import logging
 import re
 from pathlib import Path
-from typing import List, Optional, Tuple
 
 from app.storage.git_client import GitClient, SubprocessGitClient
 
@@ -16,8 +15,8 @@ class SubscriptionUrlGenerator:
     def __init__(
         self,
         repo_root: Path,
-        remote_url: Optional[str] = None,
-        git_client: Optional[GitClient] = None,
+        remote_url: str | None = None,
+        git_client: GitClient | None = None,
     ):
         """
         Initialize SubscriptionUrlGenerator.
@@ -31,7 +30,7 @@ class SubscriptionUrlGenerator:
         self.remote_url = remote_url
         self.git_client = git_client or SubprocessGitClient()
 
-    def _get_remote_url(self) -> Optional[str]:
+    def _get_remote_url(self) -> str | None:
         """Get remote URL from git config."""
         if self.remote_url:
             return self.remote_url
@@ -55,7 +54,7 @@ class SubscriptionUrlGenerator:
         # Default to master or main
         return "master"
 
-    def _parse_remote_url(self, remote_url: str) -> Tuple[Optional[str], Optional[str]]:
+    def _parse_remote_url(self, remote_url: str) -> tuple[str | None, str | None]:
         """
         Parse remote URL to extract owner and repo.
 
@@ -79,7 +78,7 @@ class SubscriptionUrlGenerator:
 
         return None, None
 
-    def _get_repo_root(self) -> Optional[Path]:
+    def _get_repo_root(self) -> Path | None:
         """Get git repository root directory."""
         result = self.git_client.run_command(
             ["git", "rev-parse", "--show-toplevel"], self.repo_root
@@ -90,7 +89,7 @@ class SubscriptionUrlGenerator:
 
     def generate_subscription_urls(
         self, calendar_name: str, filepath: Path, format: str
-    ) -> List[str]:
+    ) -> list[str]:
         """
         Generate GitHub raw URLs for calendar subscription.
 

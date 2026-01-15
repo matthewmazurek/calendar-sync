@@ -1,6 +1,6 @@
 """Template models for configurable event processing."""
 
-from typing import Literal, Optional
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
@@ -8,9 +8,9 @@ from pydantic import BaseModel, Field
 class LocationConfig(BaseModel):
     """Location configuration with address and geo coordinates."""
 
-    address: Optional[str] = None
-    geo: Optional[tuple[float, float]] = None
-    apple_title: Optional[str] = None
+    address: str | None = None
+    geo: tuple[float, float] | None = None
+    apple_title: str | None = None
 
 
 class OvernightConfig(BaseModel):
@@ -25,6 +25,8 @@ class ConsolidateConfig(BaseModel):
 
     group_by: Literal["title", "label"]
     pattern_aware: bool = False
+    only_all_day: bool = False
+    require_same_times: bool = False
 
 
 class EventTypeConfig(BaseModel):
@@ -32,11 +34,11 @@ class EventTypeConfig(BaseModel):
 
     match: str | list[str]
     match_mode: Literal["contains", "regex"] = "contains"
-    label: Optional[str] = None
-    location: Optional[str] = None
+    label: str | None = None
+    location: str | None = None
     consolidate: str | ConsolidateConfig | Literal[False] | None = None
     overnight: str | OvernightConfig | None = None
-    time_periods: Optional[dict[str, tuple[str, str]]] = None
+    time_periods: dict[str, tuple[str, str]] | None = None
 
 
 class TemplateSettings(BaseModel):
@@ -48,7 +50,7 @@ class TemplateSettings(BaseModel):
 class TemplateDefaults(BaseModel):
     """Default values inherited by event types."""
 
-    location: Optional[str] = None
+    location: str | None = None
     consolidate: str | ConsolidateConfig | Literal[False] = "title"
     overnight: str | OvernightConfig = "split"
     time_periods: dict[str, tuple[str, str]] = Field(
@@ -61,7 +63,7 @@ class CalendarTemplate(BaseModel):
 
     name: str
     version: str = "1.0"
-    extends: Optional[str] = None
+    extends: str | None = None
     settings: TemplateSettings = TemplateSettings()
     locations: dict[str, LocationConfig] = {}
     defaults: TemplateDefaults = TemplateDefaults()

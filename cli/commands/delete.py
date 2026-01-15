@@ -1,82 +1,85 @@
 """Delete a calendar."""
 
 import logging
-import sys
 
-from app.config import CalendarConfig
-from app.storage.calendar_repository import CalendarRepository
-from app.storage.calendar_storage import CalendarStorage
-from app.storage.git_service import GitService
-from cli.setup import setup_reader_registry
+import typer
+from typing_extensions import Annotated
+
+from cli.context import get_context
 
 logger = logging.getLogger(__name__)
 
 
-def delete_command(name: str, purge_history: bool = False, force: bool = False) -> None:
-    """
-    Delete a calendar.
-
-    Args:
-        name: Calendar name to delete
-        purge_history: If True, remove from git history entirely (hard delete)
-        force: If True, skip confirmation prompt
-    """
-    config = CalendarConfig.from_env()
-    storage = CalendarStorage(config)
-    reader_registry = setup_reader_registry()
-    git_service = GitService(
-        config.calendar_dir,
-        remote_url=config.calendar_git_remote_url,
-    )
-    repository = CalendarRepository(
-        config.calendar_dir, storage, git_service, reader_registry
-    )
+def delete(
+    name: Annotated[
+        str,
+        typer.Argument(help="Calendar name to delete"),
+    ],
+    purge_history: Annotated[
+        bool,
+        typer.Option(
+            "--purge-history",
+            help="Remove calendar from git history entirely (hard delete, rewrites history)",
+        ),
+    ] = False,
+    force: Annotated[
+        bool,
+        typer.Option("--force", "-f", help="Skip confirmation prompt"),
+    ] = False,
+) -> None:
+    """Delete a calendar."""
+    ctx = get_context()
+    repository = ctx.repository
+    git_service = ctx.git_service
 
     calendar_dir = repository._get_calendar_dir(name)
     calendar_exists = calendar_dir.exists()
 
     # Show confirmation prompt unless --force is set
     if not force:
+        print(f"\nDelete calendar '{name}'")
+        print(f"  Directory: {calendar_dir}")
+
         if purge_history:
             print(
-                f"WARNING: This will permanently delete calendar '{name}' from git history."
+                f"\n{typer.style('⚠', fg=typer.colors.YELLOW, bold=True)} "
+                "This will permanently remove from git history (rewrites history)"
             )
-            print("This operation will rewrite git history and cannot be undone.")
         else:
-            print(f"This will delete calendar '{name}' from the filesystem.")
-            print(
-                "The deletion will be committed to git for audit trail and the calendar will be archived in git history."
-            )
-            print("You can restore this calendar later using the 'restore' command.")
-        print()
+            print("\n  The calendar will be archived in git history.")
+            print("  You can restore it later using: calendar-sync restore")
 
-        response = input("Continue? [y/N]: ")
-        if response.lower() not in ["y", "yes"]:
-            print("Delete cancelled.")
+        print()
+        if not typer.confirm("Continue?"):
+            typer.echo("Delete cancelled.")
             return
 
     if purge_history:
         # Hard delete: remove from git history entirely
         # This works even if calendar was already deleted from filesystem
-        print(
-            f"Purging calendar '{name}' from git history (this will rewrite history)..."
-        )
+        typer.echo(f"Purging calendar '{name}' from git history...")
         if git_service.purge_from_history(name):
             # After purging from history, remove from filesystem if it still exists
             if calendar_exists:
                 repository.delete_calendar(name)
-            print(f"Calendar '{name}' purged from git history")
+            print(
+                f"\n{typer.style('✓', fg=typer.colors.GREEN, bold=True)} "
+                f"Calendar '{name}' purged from git history"
+            )
         else:
             logger.error(f"Failed to purge calendar '{name}' from git history")
-            sys.exit(1)
+            raise typer.Exit(1)
     else:
         # Regular delete: requires calendar to exist
         if not calendar_exists:
             logger.error(f"Calendar '{name}' not found")
-            sys.exit(1)
+            raise typer.Exit(1)
 
         # Remove from filesystem and commit deletion to git
         repository.delete_calendar(name)
         # Commit the deletion to git for audit trail
         git_service.commit_deletion(name)
-        print(f"Calendar '{name}' deleted")
+        print(
+            f"\n{typer.style('✓', fg=typer.colors.GREEN, bold=True)} "
+            f"Calendar '{name}' deleted (archived in git history)"
+        )

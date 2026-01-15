@@ -51,7 +51,9 @@ def resolve_overnight_config(
     if config is None:
         default_overnight = defaults.overnight
         if isinstance(default_overnight, str):
-            return OvernightConfig(**{"as": default_overnight, "format": "{title} {time_range}"})
+            return OvernightConfig(
+                **{"as": default_overnight, "format": "{title} {time_range}"}
+            )
         return default_overnight
     if isinstance(config, str):
         return OvernightConfig(**{"as": config, "format": "{title} {time_range}"})
@@ -84,9 +86,13 @@ class ConfigurableEventProcessor:
             else:
                 # Template types are keyed by their template name (user-defined)
                 # Try exact match first, then lowercase (for backward compatibility)
-                type_config = self.template.types.get(type_name) or self.template.types.get(type_name.lower())
+                type_config = self.template.types.get(
+                    type_name
+                ) or self.template.types.get(type_name.lower())
                 if type_config:
-                    processed_events.extend(self._process_type(type_events, type_config))
+                    processed_events.extend(
+                        self._process_type(type_events, type_config)
+                    )
                 else:
                     # Type not in template - use defaults
                     processed_events.extend(self._process_with_defaults(type_events))
@@ -107,14 +113,18 @@ class ConfigurableEventProcessor:
 
         # Apply consolidation (pass overnight_config for pattern-aware)
         if consolidate_config and consolidate_config.pattern_aware:
-            consolidated, _ = self._apply_consolidation_with_overnight(transformed, consolidate_config, overnight_config)
+            consolidated, _ = self._apply_consolidation_with_overnight(
+                transformed, consolidate_config, overnight_config
+            )
         else:
             consolidated = self._apply_consolidation(transformed, consolidate_config)
 
         # Assign locations
         return self._assign_locations(consolidated, defaults.location)
 
-    def _process_type(self, events: list[Event], type_config: EventTypeConfig) -> list[Event]:
+    def _process_type(
+        self, events: list[Event], type_config: EventTypeConfig
+    ) -> list[Event]:
         """Process events of a specific type."""
         # Resolve configs
         consolidate_config = resolve_consolidate_config(
@@ -142,7 +152,9 @@ class ConfigurableEventProcessor:
             # (uniform_24h stays as 24h, uniform_day stays as day, mixed gets day + overnight)
         else:
             # Apply overnight transforms for non-pattern-aware consolidation
-            consolidated = self._apply_overnight_transforms(consolidated, overnight_config)
+            consolidated = self._apply_overnight_transforms(
+                consolidated, overnight_config
+            )
 
         # Assign locations
         location = type_config.location or self.template.defaults.location
@@ -187,7 +199,11 @@ class ConfigurableEventProcessor:
                 )
                 second_event = Event(
                     title=event.title,
-                    date=event.end_date if event.end_date else event.date + timedelta(days=1),
+                    date=(
+                        event.end_date
+                        if event.end_date
+                        else event.date + timedelta(days=1)
+                    ),
                     start=None,  # Start at midnight
                     end=event.end,
                     location=event.location,
@@ -219,14 +235,21 @@ class ConfigurableEventProcessor:
         return result
 
     def _apply_consolidation(
-        self, events: list[Event], consolidate_config: ConsolidateConfig | Literal[False] | None
+        self,
+        events: list[Event],
+        consolidate_config: ConsolidateConfig | Literal[False] | None,
     ) -> list[Event]:
         """Apply consolidation rules to events."""
-        consolidated, _ = self._apply_consolidation_with_overnight(events, consolidate_config)
+        consolidated, _ = self._apply_consolidation_with_overnight(
+            events, consolidate_config
+        )
         return consolidated
 
     def _apply_consolidation_with_overnight(
-        self, events: list[Event], consolidate_config: ConsolidateConfig | Literal[False] | None, overnight_config: OvernightConfig | None = None
+        self,
+        events: list[Event],
+        consolidate_config: ConsolidateConfig | Literal[False] | None,
+        overnight_config: OvernightConfig | None = None,
     ) -> tuple[list[Event], list[date]]:
         """Apply consolidation rules to events, returning overnight dates for mixed stretches."""
         if consolidate_config is False or consolidate_config is None:
@@ -255,11 +278,15 @@ class ConfigurableEventProcessor:
                 all_overnight_dates.extend(overnight_dates)
             else:
                 # Simple consolidation
-                consolidated.extend(self._consolidate_simple(key_events))
+                consolidated.extend(
+                    self._consolidate_simple(key_events, consolidate_config)
+                )
 
         return consolidated, all_overnight_dates
 
-    def _consolidate_simple(self, events: list[Event]) -> list[Event]:
+    def _consolidate_simple(
+        self, events: list[Event], consolidate_config: ConsolidateConfig | None = None
+    ) -> list[Event]:
         """Simple consolidation by consecutive dates."""
         if not events:
             return []
@@ -281,6 +308,23 @@ class ConfigurableEventProcessor:
             first_date = all_dates[start_idx]
             last_date = all_dates[end_idx]
             first_event = events_by_date[first_date]
+
+            stretch_events = [
+                events_by_date[d] for d in all_dates[start_idx : end_idx + 1]
+            ]
+            if consolidate_config and consolidate_config.only_all_day:
+                if any(
+                    e.start is not None or e.end is not None for e in stretch_events
+                ):
+                    consolidated.extend(stretch_events)
+                    start_idx = end_idx + 1
+                    continue
+            if consolidate_config and consolidate_config.require_same_times:
+                time_pairs = {(e.start, e.end) for e in stretch_events}
+                if len(time_pairs) > 1:
+                    consolidated.extend(stretch_events)
+                    start_idx = end_idx + 1
+                    continue
 
             if start_idx == end_idx:
                 consolidated.append(first_event)
@@ -304,7 +348,10 @@ class ConfigurableEventProcessor:
         return consolidated
 
     def _consolidate_pattern_aware(
-        self, events: list[Event], consolidate_config: ConsolidateConfig, overnight_config: OvernightConfig | None = None
+        self,
+        events: list[Event],
+        consolidate_config: ConsolidateConfig,
+        overnight_config: OvernightConfig | None = None,
     ) -> tuple[list[Event], list[date]]:
         """Pattern-aware consolidation that detects uniform vs mixed stretches."""
         if not events:
@@ -374,9 +421,13 @@ class ConfigurableEventProcessor:
                         )
                         for e in stretch_events
                     ]
-                    consolidated.extend(self._consolidate_simple(all_day_events))
+                    consolidated.extend(
+                        self._consolidate_simple(all_day_events, consolidate_config)
+                    )
                 else:
-                    consolidated.extend(self._consolidate_simple(stretch_events))
+                    consolidated.extend(
+                        self._consolidate_simple(stretch_events, consolidate_config)
+                    )
             else:  # mixed
                 # Mixed - consolidate day portion as all-day event, track overnight dates
                 day_events = []
@@ -413,13 +464,13 @@ class ConfigurableEventProcessor:
 
                 # Consolidate day portion as all-day events
                 if day_events:
-                    consolidated.extend(self._consolidate_simple(day_events))
+                    consolidated.extend(
+                        self._consolidate_simple(day_events, consolidate_config)
+                    )
 
         return consolidated, overnight_dates
 
-    def _detect_consecutive_stretches(
-        self, all_dates: list[date]
-    ) -> list[list[date]]:
+    def _detect_consecutive_stretches(self, all_dates: list[date]) -> list[list[date]]:
         """Detect stretches of consecutive dates (don't break on pattern changes)."""
         if not all_dates:
             return []
@@ -500,7 +551,9 @@ class ConfigurableEventProcessor:
 
         return overnight_events
 
-    def _assign_locations(self, events: list[Event], location_ref: str | None) -> list[Event]:
+    def _assign_locations(
+        self, events: list[Event], location_ref: str | None
+    ) -> list[Event]:
         """Assign locations to events."""
         if location_ref is None:
             return events
@@ -514,7 +567,7 @@ class ConfigurableEventProcessor:
         for event in events:
             # Only update fields that are provided in the location config
             update_dict = {}
-            
+
             if not event.location:
                 # Event has no location - assign from template
                 if location_config.address is not None:
@@ -527,9 +580,12 @@ class ConfigurableEventProcessor:
                 # Event already has location - only add geo/apple_title if missing
                 if not event.location_geo and location_config.geo is not None:
                     update_dict["location_geo"] = location_config.geo
-                if not event.location_apple_title and location_config.apple_title is not None:
+                if (
+                    not event.location_apple_title
+                    and location_config.apple_title is not None
+                ):
                     update_dict["location_apple_title"] = location_config.apple_title
-            
+
             if update_dict:
                 updated_event = event.model_copy(update=update_dict)
                 result.append(updated_event)

@@ -4,7 +4,9 @@ import logging
 import sys
 from pathlib import Path
 
-from app.config import CalendarConfig
+import typer
+from typing_extensions import Annotated
+
 from app.exceptions import (
     CalendarNotFoundError,
     IngestionError,
@@ -13,98 +15,142 @@ from app.exceptions import (
 )
 from app.models.template_loader import get_template
 from app.processing.calendar_manager import CalendarManager
-from app.storage.calendar_repository import CalendarRepository
-from app.storage.calendar_storage import CalendarStorage
-from app.storage.git_service import GitService
-from cli.setup import setup_reader_registry, setup_writer
-from cli.utils import format_complete_summary
+from cli.commands.diff import display_diff
+from cli.context import get_context
 
 logger = logging.getLogger(__name__)
 
 
-def sync_command(
-    calendar_data_file: str,
-    calendar_name: str,
-    year: int | None = None,
-    format: str = "ics",
-    publish: bool = False,
-) -> None:
-    """
-    Sync calendar data file and create or update calendar.
+def _format_processing_summary(processing_summary: dict) -> None:
+    """Format processing summary with arrow notation for collapsed events."""
+    if not processing_summary:
+        return
 
-    Args:
-        calendar_data_file: Path to input calendar file
-        calendar_name: Name of calendar to create or update
-        year: Optional year to replace (for composition)
-        format: Output format (ics or json)
-        publish: If True, commit and push calendar changes to git
-    """
-    config = CalendarConfig.from_env()
-    storage = CalendarStorage(config)
-    reader_registry = setup_reader_registry()
-    git_service = GitService(
-        config.calendar_dir,
-        remote_url=config.calendar_git_remote_url,
-    )
-    repository = CalendarRepository(
-        config.calendar_dir, storage, git_service, reader_registry
-    )
+    input_counts = processing_summary.get("input_counts", {})
+    output_counts = processing_summary.get("output_counts", {})
+    input_total = processing_summary.get("input_total", 0)
+    output_total = processing_summary.get("output_total", 0)
 
-    # Load template if configured
-    template = get_template(config.default_template, config.template_dir)
-    if template:
-        logger.info(f"Using template: {template.name} (version {template.version})")
-        if template.extends:
-            logger.info(f"Template extends: {template.extends}")
+    if not input_counts:
+        return
+
+    print("\nProcessing:")
+
+    # Format each event type
+    for event_type, count in sorted(input_counts.items()):
+        output_count = output_counts.get(event_type, 0)
+        if output_count != count:
+            print(f"  {event_type}: {count} → {output_count}")
+        else:
+            print(f"  {event_type}: {count}")
+
+    # Total with separator
+    print("  " + "─" * 30)
+    if output_total != input_total:
+        print(f"  Total: {input_total} → {output_total}")
     else:
-        logger.info(
-            "No template configured - events will be processed without template rules"
-        )
+        print(f"  Total: {input_total}")
+
+
+def _format_stats(ingestion_summary: dict) -> None:
+    """Format statistics in a compact single line."""
+    parts = []
+
+    total_halfdays = ingestion_summary.get("total_halfdays")
+    weekly_coverage_year = ingestion_summary.get("weekly_coverage_year")
+
+    if total_halfdays is not None:
+        parts.append(f"{total_halfdays} half-days")
+    if weekly_coverage_year is not None:
+        parts.append(f"{weekly_coverage_year:.1f}/week coverage")
+
+    if parts:
+        print(f"\nStats: {' · '.join(parts)}")
+
+
+def sync_command(
+    calendar_name: Annotated[
+        str,
+        typer.Argument(help="Calendar name to create or update"),
+    ],
+    calendar_data_file: Annotated[
+        str,
+        typer.Argument(help="Path to input calendar file (DOCX, ICS, or JSON)"),
+    ],
+    year: Annotated[
+        int | None,
+        typer.Option(
+            "--year", "-y", help="Year to replace when updating existing calendar"
+        ),
+    ] = None,
+    format: Annotated[
+        str | None,
+        typer.Option("--format", "-o", help="Output format: ics or json"),
+    ] = None,
+    template_name: Annotated[
+        str | None,
+        typer.Option(
+            "--template", "-t", help="Template name to use (overrides config)"
+        ),
+    ] = None,
+    publish: Annotated[
+        bool,
+        typer.Option("--publish", "-p", help="Commit and push calendar changes to git"),
+    ] = False,
+    force: Annotated[
+        bool,
+        typer.Option("--force", "-f", help="Skip confirmation prompt"),
+    ] = False,
+) -> None:
+    """Sync calendar data file and create or update calendar."""
+    ctx = get_context()
+    config = ctx.config
+    repository = ctx.repository
+    git_service = ctx.git_service
+    reader_registry = ctx.reader_registry
 
     # Read input file
-    input_path = Path(calendar_data_file).expanduser()
+    input_path = Path(calendar_data_file).expanduser().resolve()
     if not input_path.exists():
         raise FileNotFoundError(f"Input file not found: {calendar_data_file}")
 
+    # Use config default format if not specified
+    if format is None:
+        format = config.default_format
+
+    # Load template (use override or fallback to config)
+    effective_template_name = template_name or config.default_template
+    template = get_template(effective_template_name, config.template_dir)
+    logger.info(f"Using template: {template.name} (version {template.version})")
+    if template.extends:
+        logger.info(f"Template extends: {template.extends}")
+
     try:
         reader = reader_registry.get_reader(input_path)
-        file_format = input_path.suffix.lower()
         reader_name = reader.__class__.__name__
         logger.info(
-            f"Reading calendar file: {input_path} (format: {file_format}, reader: {reader_name})"
+            f"Reading calendar file: {input_path} (format: {input_path.suffix}, reader: {reader_name})"
         )
     except UnsupportedFormatError as e:
         logger.error(str(e))
         sys.exit(1)
 
+    # Check if calendar exists (for diff later)
+    existing = repository.load_calendar(calendar_name, format)
+    existing_calendar = existing.calendar if existing else None
+
     try:
         # Pass template to WordReader if it's a WordReader
         from app.ingestion.word_reader import WordReader
 
-        if isinstance(reader, WordReader) and template:
-            source_calendar = reader.read(input_path, template)
+        if isinstance(reader, WordReader):
+            ingestion_result = reader.read(input_path, template)
         else:
-            source_calendar = reader.read(input_path)
+            ingestion_result = reader.read(input_path)
 
-        # Calculate date range
-        if source_calendar.events:
-            dates = [event.date for event in source_calendar.events]
-            min_date = min(dates)
-            max_date = max(dates)
-            date_range = f"{min_date} to {max_date}"
-        else:
-            date_range = "no events"
+        source_calendar = ingestion_result.calendar
+        ingestion_summary = ingestion_result.summary
 
-        # Collect ingestion summary data (will be printed at the end)
-        ingestion_summary = {
-            "format": file_format,
-            "reader_name": reader_name,
-            "events": len(source_calendar.events),
-            "date_range": date_range,
-            "year": source_calendar.year,
-            "revised_date": source_calendar.revised_date,
-        }
-        logger.info(f"Ingested {len(source_calendar.events)} events from {input_path}")
     except IngestionError as e:
         logger.error(f"Failed to read calendar file: {e}")
         sys.exit(1)
@@ -112,16 +158,41 @@ def sync_command(
         logger.error(f"Year validation error: {e}")
         sys.exit(1)
 
+    # ─────────────────────────────────────────────────────────────────────────
+    # Output: Header
+    # ─────────────────────────────────────────────────────────────────────────
+    is_new = existing is None
+    action = "Creating" if is_new else "Updating"
+    print(f"\n{'━' * 40}")
+    print(typer.style(f"  {action}: {calendar_name}", bold=True))
+    print(f"{'━' * 40}")
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # Output: Source info (condensed)
+    # ─────────────────────────────────────────────────────────────────────────
+    date_range = ingestion_summary.date_range
+    print(f"\nSource: {input_path}")
+    source_details = [f"{ingestion_summary.events} events", date_range]
+    if ingestion_summary.revised_date:
+        source_details.append(f"revised {ingestion_summary.revised_date}")
+    print(f"  {' · '.join(source_details)}")
+
+    # Template info
+    template_info = f"Template: {template.name}"
+    if template.extends:
+        template_info += f" (extends {template.extends})"
+    print(f"  {template_info}")
+
+    logger.info(f"Ingested {len(source_calendar.events)} events from {input_path}")
+
     # Create calendar manager
     manager = CalendarManager(repository)
 
-    # Check if calendar exists
-    existing = repository.load_calendar(calendar_name, format)
-
-    if existing is None:
+    # ─────────────────────────────────────────────────────────────────────────
+    # Process calendar (preview only - don't save yet)
+    # ─────────────────────────────────────────────────────────────────────────
+    if is_new:
         # Creating new calendar - allow multi-year calendars
-        action_message = f"Creating new calendar '{calendar_name}'"
-        logger.info(action_message)
         try:
             result, processing_summary = manager.create_calendar_from_source(
                 source_calendar, calendar_name, template
@@ -130,24 +201,40 @@ def sync_command(
             logger.error(f"Year validation error: {e}")
             sys.exit(1)
 
+        # Processing summary
+        _format_processing_summary(processing_summary)
+
+        # Stats
+        _format_stats(ingestion_summary.model_dump())
+
+        # Show diff (everything is new)
+        display_diff(None, result.calendar, "empty", "new", compact=True)
+
+        # Interactive confirmation unless --force is set
+        if not force:
+            typer.echo()
+            if not typer.confirm("Continue?"):
+                typer.echo("Sync cancelled.")
+                raise typer.Exit(0)
+
         # Save calendar
-        writer = setup_writer(format)
+        writer = ctx.get_writer(format)
         filepath = repository.save_calendar(result.calendar, result.metadata, writer)
+        filepath_abs = Path(filepath).resolve()
+
+        # Success message with clickable path
+        print(
+            f"\n{typer.style('✓', fg=typer.colors.GREEN, bold=True)} Calendar created"
+        )
+        print(f"  {filepath_abs}")
         logger.info(f"Calendar created: {filepath}")
 
         # Publish to git if requested
         if publish:
             git_service.publish_calendar(calendar_name, filepath, format)
-            logger.info("Calendar published to git")
-
-        # Print complete summary at the end
-        format_complete_summary(
-            ingestion_summary=ingestion_summary,
-            processing_summary=processing_summary,
-            action_message=action_message,
-            filepath=filepath,
-            published=publish,
-        )
+            print(
+                f"{typer.style('✓', fg=typer.colors.GREEN, bold=True)} Published to git"
+            )
     else:
         # Compose with existing calendar - requires year specification
         # Determine year if not specified
@@ -164,8 +251,6 @@ def sync_command(
             else:
                 year = source_calendar.year
 
-        action_message = f"Updating calendar '{calendar_name}' for year {year}"
-        logger.info(action_message)
         try:
             result, processing_summary = manager.compose_calendar_with_source(
                 calendar_name, source_calendar, year, repository, template
@@ -177,21 +262,41 @@ def sync_command(
             logger.error(f"Year validation error: {e}")
             sys.exit(1)
 
+        # Processing summary
+        _format_processing_summary(processing_summary)
+
+        # Stats
+        _format_stats(ingestion_summary.model_dump())
+
+        # Show diff between old and new calendar
+        display_diff(existing_calendar, result.calendar, "previous", "updated")
+
+        # Interactive confirmation unless --force is set
+        if not force:
+            typer.echo()
+            if not typer.confirm("Continue?"):
+                typer.echo("Sync cancelled.")
+                raise typer.Exit(0)
+
         # Save updated calendar
-        writer = setup_writer(format)
+        writer = ctx.get_writer(format)
         filepath = repository.save_calendar(result.calendar, result.metadata, writer)
+        filepath_abs = Path(filepath).resolve()
+
+        # Success message with clickable path
+        print(
+            f"\n{typer.style('✓', fg=typer.colors.GREEN, bold=True)} Calendar updated (year {year})"
+        )
+        print(f"  {filepath_abs}")
         logger.info(f"Calendar updated: {filepath}")
 
         # Publish to git if requested
         if publish:
             git_service.publish_calendar(calendar_name, filepath, format)
-            logger.info("Calendar published to git")
+            print(
+                f"{typer.style('✓', fg=typer.colors.GREEN, bold=True)} Published to git"
+            )
 
-        # Print complete summary at the end
-        format_complete_summary(
-            ingestion_summary=ingestion_summary,
-            processing_summary=processing_summary,
-            action_message=action_message,
-            filepath=filepath,
-            published=publish,
-        )
+
+# Alias for backwards compatibility with CLI registration
+sync = sync_command

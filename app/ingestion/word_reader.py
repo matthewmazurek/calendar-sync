@@ -13,8 +13,10 @@ from typing import List
 from docx import Document
 
 from app.exceptions import IngestionError, InvalidYearError
+from app.ingestion.summary import build_ingestion_summary
 from app.models.calendar import Calendar
 from app.models.event import Event
+from app.models.ingestion import IngestionResult
 from app.models.template import CalendarTemplate, EventTypeConfig
 
 logger = logging.getLogger(__name__)
@@ -295,12 +297,17 @@ def normalize_to_docx(path: str | Path) -> str:
 class WordReader:
     """Reader for Word document calendar files."""
 
-    def read(self, path: Path, template: CalendarTemplate | None = None) -> Calendar:
+    def read(
+        self, path: Path, template: CalendarTemplate | None = None
+    ) -> IngestionResult:
         """Read calendar from Word document."""
         try:
             docx_path = normalize_to_docx(path)
             try:
-                return self._read_docx(docx_path, template)
+                calendar = self._read_docx(docx_path, template)
+                return IngestionResult(
+                    calendar=calendar, summary=build_ingestion_summary(calendar)
+                )
             finally:
                 # Clean up temporary docx file if it was created
                 if docx_path != str(path):
@@ -311,10 +318,13 @@ class WordReader:
         except Exception as e:
             raise IngestionError(f"Failed to read Word document: {e}") from e
 
-    def _read_docx(self, docx_path: str, template: CalendarTemplate) -> Calendar:
+    def _read_docx(self, docx_path: str, template: CalendarTemplate | None) -> Calendar:
         """Read calendar from .docx file."""
         logger.info(f"Reading Word document: {docx_path}")
-        logger.info(f"Using template: {template.name} (version {template.version})")
+        if template:
+            logger.info(f"Using template: {template.name} (version {template.version})")
+        else:
+            logger.info("No template provided")
         doc = Document(str(docx_path))
         events = []
 

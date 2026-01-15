@@ -3,6 +3,8 @@
 import os
 from pathlib import Path
 
+import typer
+
 from app.config import CalendarConfig
 
 
@@ -19,7 +21,7 @@ def _find_env_file() -> Path | None:
     return None
 
 
-def config_command() -> None:
+def config() -> None:
     """Display configuration file path and settings."""
     # Find .env file
     env_file = _find_env_file()
@@ -28,18 +30,18 @@ def config_command() -> None:
     default_config = CalendarConfig()
     
     # Load config (from .env and environment)
-    config = CalendarConfig.from_env()
+    config_obj = CalendarConfig.from_env()
     
     # Display config file path
-    print("Configuration File:")
+    typer.echo("Configuration File:")
     if env_file:
-        print(f"  Path: {env_file}")
+        typer.echo(f"  Path: {env_file}")
     else:
-        print("  Path: Not found (using defaults and environment variables)")
-    print()
+        typer.echo("  Path: Not found (using defaults and environment variables)")
+    typer.echo()
     
     # Display config settings
-    print("Configuration Settings:")
+    typer.echo("Configuration Settings:")
     label_width = 25
     
     # Determine source for each setting
@@ -56,18 +58,18 @@ def config_command() -> None:
             return "default"
     
     # Default format
-    source_format = get_source("CALENDAR_FORMAT", config.default_format, default_config.default_format)
-    print(f"{'default_format:':<{label_width}} {config.default_format} ({source_format})")
+    source_format = get_source("CALENDAR_FORMAT", config_obj.default_format, default_config.default_format)
+    typer.echo(f"{'default_format:':<{label_width}} {config_obj.default_format} ({source_format})")
     
     # Calendar directory
-    source_dir = get_source("CALENDAR_DIR", str(config.calendar_dir), str(default_config.calendar_dir))
-    print(f"{'calendar_dir:':<{label_width}} {config.calendar_dir} ({source_dir})")
+    source_dir = get_source("CALENDAR_DIR", str(config_obj.calendar_dir), str(default_config.calendar_dir))
+    typer.echo(f"{'calendar_dir:':<{label_width}} {config_obj.calendar_dir} ({source_dir})")
     
     # LS default limit
-    source_limit = get_source("LS_DEFAULT_LIMIT", config.ls_default_limit, default_config.ls_default_limit)
-    print(f"{'ls_default_limit:':<{label_width}} {config.ls_default_limit} ({source_limit})")
+    source_limit = get_source("LS_DEFAULT_LIMIT", config_obj.ls_default_limit, default_config.ls_default_limit)
+    typer.echo(f"{'ls_default_limit:':<{label_width}} {config_obj.ls_default_limit} ({source_limit})")
     
     # Git remote URL
-    source_git = get_source("CALENDAR_GIT_REMOTE_URL", config.calendar_git_remote_url, default_config.calendar_git_remote_url)
-    git_display = config.calendar_git_remote_url if config.calendar_git_remote_url else "None"
-    print(f"{'calendar_git_remote_url:':<{label_width}} {git_display} ({source_git})")
+    source_git = get_source("CALENDAR_GIT_REMOTE_URL", config_obj.calendar_git_remote_url, default_config.calendar_git_remote_url)
+    git_display = config_obj.calendar_git_remote_url if config_obj.calendar_git_remote_url else "None"
+    typer.echo(f"{'calendar_git_remote_url:':<{label_width}} {git_display} ({source_git})")

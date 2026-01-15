@@ -2,7 +2,6 @@
 
 from datetime import date, time
 from enum import Enum
-from typing import Optional
 
 from pydantic import BaseModel, computed_field, field_validator, model_validator
 
@@ -55,14 +54,14 @@ class Event(BaseModel):
 
     title: str
     date: date
-    start: Optional[time] = None
-    end: Optional[time] = None
-    end_date: Optional[date] = None
-    location: Optional[str] = None
-    location_geo: Optional[tuple[float, float]] = None
-    location_apple_title: Optional[str] = None
-    type: Optional[str] = None
-    label: Optional[str] = None
+    start: time | None = None
+    end: time | None = None
+    end_date: date | None = None
+    location: str | None = None
+    location_geo: tuple[float, float] | None = None
+    location_apple_title: str | None = None
+    type: str | None = None
+    label: str | None = None
 
     @field_validator("start", "end", mode="before")
     @classmethod
@@ -109,7 +108,6 @@ class Event(BaseModel):
     def is_overnight(self) -> bool:
         """True if end_date is set and end_date > date."""
         return self.end_date is not None and self.end_date > self.date
-
 
     class Config:
         """Pydantic config."""

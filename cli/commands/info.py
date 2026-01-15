@@ -1,15 +1,13 @@
 """Display calendar info and event count."""
 
 import logging
-import sys
 from datetime import date, datetime, timezone
 
-from app.config import CalendarConfig
-from app.storage.calendar_repository import CalendarRepository
-from app.storage.calendar_storage import CalendarStorage
-from app.storage.git_service import GitService
+import typer
+from typing_extensions import Annotated
+
 from app.storage.subscription_url_generator import SubscriptionUrlGenerator
-from cli.setup import setup_reader_registry
+from cli.context import get_context
 from cli.utils import format_relative_time
 
 logger = logging.getLogger(__name__)
@@ -36,23 +34,21 @@ def _format_datetime(dt, include_relative=True):
     return date_str
 
 
-def info_command(name: str) -> None:
+def info(
+    name: Annotated[
+        str,
+        typer.Argument(help="Calendar name"),
+    ],
+) -> None:
     """Display calendar info and event count."""
-    config = CalendarConfig.from_env()
-    storage = CalendarStorage(config)
-    reader_registry = setup_reader_registry()
-    git_service = GitService(
-        config.calendar_dir,
-        remote_url=config.calendar_git_remote_url,
-    )
-    repository = CalendarRepository(
-        config.calendar_dir, storage, git_service, reader_registry
-    )
+    ctx = get_context()
+    repository = ctx.repository
+    git_service = ctx.git_service
 
     calendar_with_metadata = repository.load_calendar(name)
     if calendar_with_metadata is None:
         logger.error(f"Calendar '{name}' not found")
-        sys.exit(1)
+        raise typer.Exit(1)
 
     calendar = calendar_with_metadata.calendar
     metadata = calendar_with_metadata.metadata
@@ -61,40 +57,40 @@ def info_command(name: str) -> None:
     calendar_path = repository.get_calendar_path(name, metadata.format)
 
     # Header
-    print(f"Calendar: {name} ({calendar_path})")
-    print()
+    typer.echo(f"Calendar: {name} ({calendar_path})")
+    typer.echo()
 
     # Basic info
     label_width = 18
-    print(f"{'Events:':<{label_width}} {len(calendar.events):,}")
-    print(f"{'Format:':<{label_width}} {metadata.format}")
+    typer.echo(f"{'Events:':<{label_width}} {len(calendar.events):,}")
+    typer.echo(f"{'Format:':<{label_width}} {metadata.format}")
 
     # Calculate date range from events
     if calendar.events:
         dates = [event.date for event in calendar.events]
         min_date = min(dates)
         max_date = max(dates)
-        print(f"{'Date range:':<{label_width}} {min_date} to {max_date}")
+        typer.echo(f"{'Date range:':<{label_width}} {min_date} to {max_date}")
     else:
-        print(f"{'Date range:':<{label_width}} no events")
+        typer.echo(f"{'Date range:':<{label_width}} no events")
 
-    print()
+    typer.echo()
 
     # Timestamps
     if metadata.source_revised_at:
-        print(
+        typer.echo(
             f"{'Source revised:':<{label_width}} {_format_datetime(metadata.source_revised_at)}"
         )
-    print(f"{'Created:':<{label_width}} {_format_datetime(metadata.created)}")
-    print(f"{'Last updated:':<{label_width}} {_format_datetime(metadata.last_updated)}")
+    typer.echo(f"{'Created:':<{label_width}} {_format_datetime(metadata.created)}")
+    typer.echo(f"{'Last updated:':<{label_width}} {_format_datetime(metadata.last_updated)}")
 
     # Get git commit history to show actual commit count
     versions = repository.list_calendar_versions(name, metadata.format)
     commit_count = len(versions)
 
     if commit_count > 0:
-        print()
-        print(f"{'Git commits:':<{label_width}} {commit_count}")
+        typer.echo()
+        typer.echo(f"{'Git commits:':<{label_width}} {commit_count}")
 
         # Get latest commit info
         latest_commit_hash, latest_commit_date, latest_commit_message = versions[0]
@@ -125,8 +121,8 @@ def info_command(name: str) -> None:
         else:
             current_str = "uncommitted changes"
 
-        print(f"{'Current version:':<{label_width}} {current_str}")
-        print(
+        typer.echo(f"{'Current version:':<{label_width}} {current_str}")
+        typer.echo(
             f"{'Latest commit:':<{label_width}} {latest_commit_hash[:7]} {_format_datetime(latest_commit_date)}"
         )
 
@@ -139,7 +135,7 @@ def info_command(name: str) -> None:
                 name, calendar_path, metadata.format
             )
             if subscription_urls:
-                print(f"{'Remote URL:':<{label_width}} {subscription_urls[0]}")
+                typer.echo(f"{'Remote URL:':<{label_width}} {subscription_urls[0]}")
     else:
-        print()
-        print(f"{'Git commits:':<{label_width}} N/A (not in git repository)")
+        typer.echo()
+        typer.echo(f"{'Git commits:':<{label_width}} N/A (not in git repository)")

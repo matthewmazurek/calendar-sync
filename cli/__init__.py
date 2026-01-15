@@ -4,33 +4,57 @@ import logging
 import sys
 from pathlib import Path
 
-from cli.parser import main
 
-# Configure logging with separate formatters for file and console
-# File formatter: includes timestamp
-file_formatter = logging.Formatter("%(asctime)s - %(levelname)s - %(message)s")
+def setup_logging(verbose: bool = False, quiet: bool = False) -> None:
+    """Configure logging with separate formatters for file and console.
 
-# Console formatter: no timestamp, just level and message
-console_formatter = logging.Formatter("%(levelname)s: %(message)s")
+    Args:
+        verbose: If True, set console to DEBUG level
+        quiet: If True, set console to ERROR level only
+    """
+    # File formatter: includes timestamp
+    file_formatter = logging.Formatter("%(asctime)s - %(levelname)s - %(message)s")
 
-# Ensure logs directory exists
-logs_dir = Path("logs")
-logs_dir.mkdir(exist_ok=True)
+    # Console formatter: no timestamp, just level and message
+    console_formatter = logging.Formatter("%(levelname)s: %(message)s")
 
-# File handler (with timestamp)
-file_handler = logging.FileHandler(logs_dir / "calendar_sync.log")
-file_handler.setFormatter(file_formatter)
-file_handler.setLevel(logging.INFO)
+    # Ensure logs directory exists
+    logs_dir = Path("logs")
+    logs_dir.mkdir(exist_ok=True)
 
-# Console handler (no timestamp) - show info, warnings and errors
-console_handler = logging.StreamHandler(sys.stderr)
-console_handler.setFormatter(console_formatter)
-console_handler.setLevel(logging.INFO)
+    # File handler (with timestamp)
+    file_handler = logging.FileHandler(logs_dir / "calendar_sync.log")
+    file_handler.setFormatter(file_formatter)
+    file_handler.setLevel(logging.DEBUG)
 
-# Configure root logger
-root_logger = logging.getLogger()
-root_logger.setLevel(logging.INFO)
-root_logger.addHandler(file_handler)
-root_logger.addHandler(console_handler)
+    # Console handler - level based on flags
+    console_handler = logging.StreamHandler(sys.stderr)
+    console_handler.setFormatter(console_formatter)
 
-__all__ = ["main"]
+    if quiet:
+        console_handler.setLevel(logging.ERROR)
+    elif verbose:
+        console_handler.setLevel(logging.INFO)
+    else:
+        # Default: only show warnings and errors (no INFO spam)
+        console_handler.setLevel(logging.WARNING)
+
+    # Configure root logger
+    root_logger = logging.getLogger()
+    root_logger.setLevel(logging.DEBUG)
+
+    # Remove existing handlers to avoid duplicates
+    root_logger.handlers.clear()
+
+    root_logger.addHandler(file_handler)
+    root_logger.addHandler(console_handler)
+
+
+def main() -> None:
+    """Main entry point for the CLI."""
+    from cli.parser import app
+
+    app()
+
+
+__all__ = ["main", "setup_logging"]

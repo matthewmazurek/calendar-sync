@@ -1,31 +1,40 @@
 """Git setup command for initializing calendar repository."""
 
+import json
 import logging
-import os
 import re
 import shutil
 import subprocess
-import sys
 from pathlib import Path
-from typing import Optional, Tuple
 
-from app.config import CalendarConfig
+import typer
+from typing_extensions import Annotated
+
 from app.storage.git_service import GitService
+from cli.context import CLIContext, get_context
 
 logger = logging.getLogger(__name__)
 
 
-def git_setup_command(delete: bool = False) -> None:
-    """
-    Initialize git repository in calendar directory with seamless URL generation,
+def git_setup(
+    delete: Annotated[
+        bool,
+        typer.Option(
+            "--delete",
+            help="Delete local and remote git repository (with confirmation)",
+        ),
+    ] = False,
+) -> None:
+    """Initialize git repository in calendar directory with seamless URL generation,
     or delete local and remote repository if --delete is specified.
     """
-    config = CalendarConfig.from_env()
+    ctx = get_context()
+    config = ctx.config
     calendar_dir = config.calendar_dir.resolve()
 
     # Handle delete mode
     if delete:
-        delete_git_repository(calendar_dir)
+        _delete_git_repository(calendar_dir)
         return
 
     # Check if git repo already exists
@@ -34,15 +43,15 @@ def git_setup_command(delete: bool = False) -> None:
         git_service = GitService(calendar_dir)
         remote_url = git_service.get_remote_url()
         if remote_url:
-            print(f"Git repository already exists in {calendar_dir}")
-            print(f"Remote URL: {remote_url}")
+            typer.echo(f"Git repository already exists in {calendar_dir}")
+            typer.echo(f"Remote URL: {remote_url}")
             return
 
-        print(f"Git repository already exists in {calendar_dir}")
-        print("No remote configured. Setting up remote...")
+        typer.echo(f"Git repository already exists in {calendar_dir}")
+        typer.echo("No remote configured. Setting up remote...")
     else:
         # Initialize git repo
-        print(f"Initializing git repository in {calendar_dir}...")
+        typer.echo(f"Initializing git repository in {calendar_dir}...")
         calendar_dir.mkdir(parents=True, exist_ok=True)
         try:
             subprocess.run(
@@ -51,40 +60,37 @@ def git_setup_command(delete: bool = False) -> None:
                 check=True,
                 capture_output=True,
             )
-            print("Git repository initialized.")
+            typer.echo("Git repository initialized.")
         except subprocess.CalledProcessError as e:
             logger.error(f"Failed to initialize git repository: {e}")
-            sys.exit(1)
+            raise typer.Exit(1)
 
     # Seamless URL generation (tiered approach)
     remote_url = None
 
     # Tier 1: Try GitHub CLI first (most seamless)
-    if check_gh_cli_available():
-        username = get_github_username_from_gh()
+    if _check_gh_cli_available():
+        username = _get_github_username_from_gh()
         if username:
             default_repo_name = "calendar-sync-calendars"
-            suggested_repo = f"{username}/{default_repo_name}"
-            print(f"\nGitHub CLI detected.")
-            response = input(f"Repository name [{default_repo_name}]: ").strip()
+            typer.echo(f"\nGitHub CLI detected.")
+            response = typer.prompt(f"Repository name", default=default_repo_name)
 
-            if response:
-                repo_name = response
-            else:
-                repo_name = default_repo_name
+            repo_name = response if response else default_repo_name
 
             full_repo_name = f"{username}/{repo_name}"
-            print(f"Creating repository '{full_repo_name}'...")
-            if create_repo_with_gh(username, repo_name, calendar_dir):
+            typer.echo(f"Creating repository '{full_repo_name}'...")
+            if _create_repo_with_gh(username, repo_name, calendar_dir):
                 remote_url = f"https://github.com/{username}/{repo_name}.git"
-                print(f"Repository created and remote configured: {remote_url}")
+                typer.echo(f"Repository created and remote configured: {remote_url}")
 
     # Tier 2: Manual fallback
     if not remote_url:
-        print("\nCould not auto-detect GitHub settings.")
-        manual_url = input(
-            "Enter GitHub repository URL (or press Enter to skip): "
-        ).strip()
+        typer.echo("\nCould not auto-detect GitHub settings.")
+        manual_url = typer.prompt(
+            "Enter GitHub repository URL (or press Enter to skip)",
+            default="",
+        )
         if manual_url:
             remote_url = manual_url
 
@@ -105,14 +111,16 @@ def git_setup_command(delete: bool = False) -> None:
                 check=True,
                 capture_output=True,
             )
-            print(f"Remote 'origin' configured: {remote_url}")
+            typer.echo(f"Remote 'origin' configured: {remote_url}")
 
             # Save to .env file
-            write_to_env_file("CALENDAR_GIT_REMOTE_URL", remote_url)
-            print("Remote URL saved to .env file")
+            _write_to_env_file("CALENDAR_GIT_REMOTE_URL", remote_url)
+            typer.echo("Remote URL saved to .env file")
         except subprocess.CalledProcessError as e:
             logger.warning(f"Failed to set remote: {e}")
-            print("Warning: Could not configure remote. You can set it manually later.")
+            typer.echo(
+                "Warning: Could not configure remote. You can set it manually later."
+            )
 
     # Create initial commit if calendar files exist
     if calendar_dir.exists():
@@ -138,22 +146,22 @@ def git_setup_command(delete: bool = False) -> None:
                     check=True,
                     capture_output=True,
                 )
-                print("Initial commit created.")
+                typer.echo("Initial commit created.")
             except subprocess.CalledProcessError as e:
                 logger.warning(f"Failed to create initial commit: {e}")
 
-    print("\nGit setup complete!")
+    typer.echo("\nGit setup complete!")
     if remote_url:
-        print(f"Remote repository: {remote_url}")
-        print(
+        typer.echo(f"Remote repository: {remote_url}")
+        typer.echo(
             "You can now use 'calendar-sync publish' to push calendars to the remote."
         )
     else:
-        print("No remote configured. You can set one up later with:")
-        print("  git remote add origin <repository-url>")
+        typer.echo("No remote configured. You can set one up later with:")
+        typer.echo("  git remote add origin <repository-url>")
 
 
-def check_gh_cli_available() -> bool:
+def _check_gh_cli_available() -> bool:
     """Check if GitHub CLI is installed and authenticated."""
     try:
         # Check if gh is installed
@@ -178,7 +186,7 @@ def check_gh_cli_available() -> bool:
         return False
 
 
-def get_github_username_from_gh() -> Optional[str]:
+def _get_github_username_from_gh() -> str | None:
     """Get GitHub username from gh CLI."""
     try:
         result = subprocess.run(
@@ -188,15 +196,13 @@ def get_github_username_from_gh() -> Optional[str]:
             check=True,
         )
         # Parse JSON to get login
-        import json
-
         user_data = json.loads(result.stdout)
         return user_data.get("login")
     except Exception:
         return None
 
 
-def create_repo_with_gh(username: str, repo_name: str, calendar_dir: Path) -> bool:
+def _create_repo_with_gh(username: str, repo_name: str, calendar_dir: Path) -> bool:
     """Create GitHub repository using gh CLI."""
     try:
         full_repo_name = f"{username}/{repo_name}"
@@ -221,12 +227,12 @@ def create_repo_with_gh(username: str, repo_name: str, calendar_dir: Path) -> bo
         return False
 
 
-def delete_git_repository(calendar_dir: Path) -> None:
+def _delete_git_repository(calendar_dir: Path) -> None:
     """Delete local and remote git repository with confirmation."""
     # Check if git repo exists
     git_dir = calendar_dir / ".git"
     if not git_dir.exists():
-        print(f"No git repository found in {calendar_dir}")
+        typer.echo(f"No git repository found in {calendar_dir}")
         return
 
     # Get remote URL if it exists
@@ -234,74 +240,73 @@ def delete_git_repository(calendar_dir: Path) -> None:
     remote_url = git_service.get_remote_url()
 
     # Show what will be deleted
-    print("This will delete:")
-    print(f"  - Local git repository: {git_dir}")
+    typer.echo("This will delete:")
+    typer.echo(f"  - Local git repository: {git_dir}")
     if remote_url:
-        print(f"  - Remote repository: {remote_url}")
+        typer.echo(f"  - Remote repository: {remote_url}")
         # Try to extract repo name for deletion
-        repo_name = extract_repo_name_from_url(remote_url)
+        repo_name = _extract_repo_name_from_url(remote_url)
         if repo_name:
-            print(f"    (Repository: {repo_name})")
+            typer.echo(f"    (Repository: {repo_name})")
     else:
-        print("  - No remote repository configured")
+        typer.echo("  - No remote repository configured")
 
     # Confirmation prompt
-    print()
-    response = input(
-        "Are you sure you want to delete the git repository? [yes/no]: "
-    ).strip()
-    if response.lower() not in ["yes", "y"]:
-        print("Deletion cancelled.")
+    typer.echo()
+    if not typer.confirm("Are you sure you want to delete the git repository?"):
+        typer.echo("Deletion cancelled.")
         return
 
     # Delete remote repository if it exists
     if remote_url:
-        repo_name = extract_repo_name_from_url(remote_url)
-        if repo_name and check_gh_cli_available():
-            print(f"\nDeleting remote repository '{repo_name}'...")
-            success, error_msg = delete_remote_repo(repo_name)
+        repo_name = _extract_repo_name_from_url(remote_url)
+        if repo_name and _check_gh_cli_available():
+            typer.echo(f"\nDeleting remote repository '{repo_name}'...")
+            success, error_msg = _delete_remote_repo(repo_name)
             if success:
-                print(f"Remote repository '{repo_name}' deleted successfully.")
+                typer.echo(f"Remote repository '{repo_name}' deleted successfully.")
             else:
-                print(f"Warning: Could not delete remote repository '{repo_name}'.")
+                typer.echo(
+                    f"Warning: Could not delete remote repository '{repo_name}'."
+                )
                 if error_msg:
                     # Check for missing scope error
                     if (
                         "delete_repo" in error_msg.lower()
                         or "admin rights" in error_msg.lower()
                     ):
-                        print(
+                        typer.echo(
                             "\nGitHub CLI needs the 'delete_repo' scope to delete repositories."
                         )
-                        print("To fix this, run:")
-                        print("  gh auth refresh -h github.com -s delete_repo")
-                        print("\nThen try the deletion again.")
+                        typer.echo("To fix this, run:")
+                        typer.echo("  gh auth refresh -h github.com -s delete_repo")
+                        typer.echo("\nThen try the deletion again.")
                     else:
-                        print(f"Error: {error_msg}")
-                print("\nYou can also delete it manually on GitHub if needed.")
+                        typer.echo(f"Error: {error_msg}")
+                typer.echo("\nYou can also delete it manually on GitHub if needed.")
         else:
-            print(f"\nRemote repository exists at {remote_url}")
-            print("Please delete it manually on GitHub if needed.")
+            typer.echo(f"\nRemote repository exists at {remote_url}")
+            typer.echo("Please delete it manually on GitHub if needed.")
 
     # Delete local .git directory
-    print(f"\nDeleting local git repository...")
+    typer.echo(f"\nDeleting local git repository...")
     try:
         shutil.rmtree(git_dir)
-        print(f"Local git repository deleted successfully.")
+        typer.echo(f"Local git repository deleted successfully.")
     except Exception as e:
         logger.error(f"Failed to delete local git repository: {e}")
-        print(f"Error: Could not delete local git repository: {e}")
-        sys.exit(1)
+        typer.echo(f"Error: Could not delete local git repository: {e}")
+        raise typer.Exit(1)
 
     # Remove remote URL from .env file if it exists
     if remote_url:
-        remove_from_env_file("CALENDAR_GIT_REMOTE_URL")
-        print("Remote URL removed from .env file")
+        _remove_from_env_file("CALENDAR_GIT_REMOTE_URL")
+        typer.echo("Remote URL removed from .env file")
 
-    print("\nGit repository deletion complete!")
+    typer.echo("\nGit repository deletion complete!")
 
 
-def extract_repo_name_from_url(remote_url: str) -> Optional[str]:
+def _extract_repo_name_from_url(remote_url: str) -> str | None:
     """Extract repository name (owner/repo) from GitHub URL."""
     # Remove .git suffix if present
     url = remote_url.rstrip(".git")
@@ -319,7 +324,7 @@ def extract_repo_name_from_url(remote_url: str) -> Optional[str]:
     return None
 
 
-def delete_remote_repo(full_repo_name: str) -> tuple[bool, str]:
+def _delete_remote_repo(full_repo_name: str) -> tuple[bool, str]:
     """
     Delete a GitHub repository using gh CLI.
 
@@ -344,7 +349,7 @@ def delete_remote_repo(full_repo_name: str) -> tuple[bool, str]:
         return False, str(e)
 
 
-def remove_from_env_file(key: str) -> None:
+def _remove_from_env_file(key: str) -> None:
     """Remove a key from .env file."""
     env_file = Path(".env")
     if not env_file.exists():
@@ -358,7 +363,7 @@ def remove_from_env_file(key: str) -> None:
         env_file.write_text("\n".join(updated_lines) + "\n")
 
 
-def write_to_env_file(key: str, value: str) -> None:
+def _write_to_env_file(key: str, value: str) -> None:
     """Append or update .env file with key=value."""
     env_file = Path(".env")
     env_content = ""

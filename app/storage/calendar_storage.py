@@ -1,7 +1,6 @@
 """Calendar storage for file management."""
 
 from pathlib import Path
-from typing import Optional
 
 from app.config import CalendarConfig
 from app.models.metadata import CalendarWithMetadata
@@ -11,7 +10,7 @@ from app.output.base import CalendarWriter
 class CalendarStorage:
     """File management for calendar storage."""
 
-    def __init__(self, config: Optional[CalendarConfig] = None):
+    def __init__(self, config: CalendarConfig | None = None):
         """Initialize storage with config."""
         self.config = config or CalendarConfig()
 

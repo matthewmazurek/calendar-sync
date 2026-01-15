@@ -28,7 +28,8 @@ def test_parse_example_calendar():
         pytest.skip("Fixture file not found")
 
     reader = WordReader()
-    calendar = reader.read(fixture_path)
+    ingestion_result = reader.read(fixture_path)
+    calendar = ingestion_result.calendar
     events = calendar.events
 
     # Helper to find an event by date and title substring
@@ -74,7 +75,8 @@ def test_parser_extracts_year_from_document():
         pytest.skip("Fixture file not found")
 
     reader = WordReader()
-    calendar = reader.read(fixture_path)
+    ingestion_result = reader.read(fixture_path)
+    calendar = ingestion_result.calendar
 
     # Verify that calendar has year set
     assert calendar.year == 2025

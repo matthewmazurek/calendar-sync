@@ -7,8 +7,10 @@ from pathlib import Path
 from icalendar import Calendar
 
 from app.exceptions import IngestionError
+from app.ingestion.summary import build_ingestion_summary
 from app.models.calendar import Calendar as CalendarModel
 from app.models.event import Event
+from app.models.ingestion import IngestionResult
 
 logger = logging.getLogger(__name__)
 
@@ -16,24 +18,33 @@ logger = logging.getLogger(__name__)
 class ICSReader:
     """Reader for ICS calendar files."""
 
-    def read(self, path: Path) -> CalendarModel:
+    def read(self, path: Path) -> IngestionResult:
         """Read calendar from ICS file."""
         logger.info(f"Reading ICS file: {path}")
         try:
             if not path.exists():
                 logger.warning(f"ICS file does not exist: {path}")
-                return CalendarModel(events=[])
+                calendar = CalendarModel(events=[])
+                return IngestionResult(
+                    calendar=calendar, summary=build_ingestion_summary(calendar)
+                )
 
             # Check if file is empty
             if path.stat().st_size == 0:
                 logger.warning(f"ICS file is empty: {path}")
-                return CalendarModel(events=[])
+                calendar = CalendarModel(events=[])
+                return IngestionResult(
+                    calendar=calendar, summary=build_ingestion_summary(calendar)
+                )
 
             with open(path, "r", encoding="utf-8") as f:
                 content = f.read()
                 if not content.strip():
                     logger.warning(f"ICS file contains only whitespace: {path}")
-                    return CalendarModel(events=[])
+                    calendar = CalendarModel(events=[])
+                    return IngestionResult(
+                        calendar=calendar, summary=build_ingestion_summary(calendar)
+                    )
                 cal = Calendar.from_ical(content)
         except Exception as e:
             raise IngestionError(f"Failed to read ICS file: {e}") from e
@@ -52,7 +63,10 @@ class ICSReader:
                         ) from e
 
         logger.info(f"Created {len(events)} events from ICS file")
-        return CalendarModel(events=events)
+        calendar = CalendarModel(events=events)
+        return IngestionResult(
+            calendar=calendar, summary=build_ingestion_summary(calendar)
+        )
 
     def _ics_event_to_dict(self, vevent) -> dict | None:
         """Convert an ICS VEVENT component to event dictionary."""
@@ -65,7 +79,7 @@ class ICSReader:
         location = str(vevent.get("location", "")) if vevent.get("location") else None
         if location == "":
             location = None
-        
+
         # If location contains a newline (from previous round-trip with apple_title),
         # extract only the address part (after the newline)
         if location and "\n" in location:
@@ -95,7 +109,9 @@ class ICSReader:
         if apple_location:
             try:
                 # Extract X-TITLE parameter
-                params = apple_location.params if hasattr(apple_location, "params") else {}
+                params = (
+                    apple_location.params if hasattr(apple_location, "params") else {}
+                )
                 if "X-TITLE" in params:
                     apple_title = str(params["X-TITLE"])
             except (AttributeError, KeyError):
@@ -109,7 +125,7 @@ class ICSReader:
             return None
 
         event_dict = {"title": title, "location": location}
-        
+
         # Add geo data if present
         if geo:
             event_dict["location_geo"] = geo
@@ -166,9 +182,9 @@ class ICSReader:
                     pass
                 else:
                     # Multi-day all-day event
-                    event_dict["end_date"] = (actual_end_date - timedelta(days=1)).strftime(
-                        "%Y-%m-%d"
-                    )
+                    event_dict["end_date"] = (
+                        actual_end_date - timedelta(days=1)
+                    ).strftime("%Y-%m-%d")
             # else: single-day all-day event (no end_date needed)
 
         return event_dict
