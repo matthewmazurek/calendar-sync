@@ -46,7 +46,7 @@ class SummaryRenderer:
             ingestion_summary: Summary of ingested data.
             template: Template used for processing.
         """
-        console.print(f"\nSource: {input_path}")
+        console.print(f"\nSource: \"{input_path}\"")
         source_details = [
             f"{ingestion_summary.events} events",
             ingestion_summary.date_range,
@@ -125,4 +125,4 @@ class SummaryRenderer:
         """
         console.print(f"\n[bold green]✓[/bold green] {message}")
         if path:
-            console.print(f"  {path.resolve()}")
+            console.print(f"  \"{path.resolve()}\"")

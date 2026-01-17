@@ -1,52 +1,8 @@
 """Event model with Pydantic v2 validation."""
 
 from datetime import date, time
-from enum import Enum
 
 from pydantic import BaseModel, computed_field, field_validator, model_validator
-
-
-class EventType(str, Enum):
-    """Event type enumeration."""
-
-    ON_CALL = "ON_CALL"
-    ENDOSCOPY = "ENDOSCOPY"
-    CCSC = "CCSC"
-    CLINIC = "CLINIC"
-    ADMIN = "ADMIN"
-    OTHER = "OTHER"
-
-
-class EventTypeDetector:
-    """Detects event type from title string."""
-
-    @staticmethod
-    def detect_type(title: str) -> EventType:
-        """Detect event type from title."""
-        title_lower = title.lower()
-
-        # On Call events (both "Primary on call" and "Endo on call")
-        if "on call" in title_lower:
-            return EventType.ON_CALL
-
-        # Endoscopy events
-        if "endoscopy" in title_lower or "endo" in title_lower:
-            return EventType.ENDOSCOPY
-
-        # CCSC events
-        if "ccsc" in title_lower:
-            return EventType.CCSC
-
-        # Clinic events
-        if "clinic" in title_lower:
-            return EventType.CLINIC
-
-        # Admin events
-        if "admin" in title_lower:
-            return EventType.ADMIN
-
-        # Default to OTHER
-        return EventType.OTHER
 
 
 class Event(BaseModel):
@@ -103,15 +59,6 @@ class Event(BaseModel):
                 "or 'location' for a custom address."
             )
         return self
-
-    def get_type_enum(self) -> EventType:
-        """Get event type as enum (for backward compatibility)."""
-        if self.type:
-            try:
-                return EventType(self.type.upper())
-            except ValueError:
-                return EventTypeDetector.detect_type(self.title)
-        return EventTypeDetector.detect_type(self.title)
 
     @computed_field
     @property

@@ -19,6 +19,7 @@ class CalendarInfo:
     config_path: str  # Full path to config.json
     last_updated: datetime | None
     name: str | None = None  # Display name (falls back to id if not set)
+    created: datetime | None = None  # Creation date from config.json
 
 
 @dataclass
@@ -65,7 +66,7 @@ class TableRenderer:
         table = Table(show_header=True, header_style="bold", box=None, padding=(0, 2))
         table.add_column("ID", style="cyan")
         table.add_column("NAME", style="white")
-        table.add_column("DATE", style="dim")
+        table.add_column("CREATED", style="dim")
         table.add_column("UPDATED", style="dim")
         table.add_column("CONFIG", no_wrap=True)
 
@@ -77,15 +78,16 @@ class TableRenderer:
             # Display name (fallback to id if not set)
             name_display = cal.name or "-"
 
-            if cal.last_updated:
-                date_str = cal.last_updated.strftime("%Y-%m-%d")
-                updated_str = format_relative_time(cal.last_updated)
-            else:
-                date_str = "-"
-                updated_str = "-"
+            # Created date from config.json
+            created_str = cal.created.strftime("%Y-%m-%d") if cal.created else "-"
+
+            # Last updated (relative time) from metadata
+            updated_str = (
+                format_relative_time(cal.last_updated) if cal.last_updated else "-"
+            )
 
             table.add_row(
-                id_display, name_display, date_str, updated_str, cal.config_path
+                id_display, name_display, created_str, updated_str, cal.config_path
             )
 
         console.print(table)

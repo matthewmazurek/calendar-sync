@@ -63,7 +63,7 @@ def build_calendar_statistics(
     # Events by type (normalize to lowercase for consistency)
     events_by_type: dict[str, int] = defaultdict(int)
     for event in events:
-        type_value = event.type or event.get_type_enum().value.lower()
+        type_value = event.type if event.type else "other"
         events_by_type[type_value] += 1
 
     # Events by year
@@ -80,7 +80,7 @@ def build_calendar_statistics(
         if not event.busy:
             excluded_non_busy += 1
             continue
-        event_type = (event.type or event.get_type_enum().value).lower()
+        event_type = (event.type if event.type else "other").lower()
         if event_type == "other":
             excluded_other_type += 1
             continue

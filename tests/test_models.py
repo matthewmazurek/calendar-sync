@@ -6,7 +6,7 @@ import pytest
 
 from app.exceptions import InvalidYearError, ValidationError
 from app.models.calendar import Calendar
-from app.models.event import Event, EventType, EventTypeDetector
+from app.models.event import Event
 from app.models.metadata import CalendarMetadata, CalendarWithMetadata
 
 
@@ -36,23 +36,11 @@ def test_event_time_string_conversion():
     assert event.end == time(17, 0)
 
 
-def test_event_type_detection():
-    """Test event type detection."""
-    assert EventTypeDetector.detect_type("Primary on call") == EventType.ON_CALL
-    assert EventTypeDetector.detect_type("Endo on call") == EventType.ON_CALL
-    assert EventTypeDetector.detect_type("Endoscopy") == EventType.ENDOSCOPY
-    assert EventTypeDetector.detect_type("CCSC") == EventType.CCSC
-    assert EventTypeDetector.detect_type("Clinic") == EventType.CLINIC
-    assert EventTypeDetector.detect_type("Admin") == EventType.ADMIN
-    assert EventTypeDetector.detect_type("Other Event") == EventType.OTHER
-
-
 def test_event_computed_fields():
     """Test computed fields."""
     # All-day event
     event1 = Event(title="All Day Event", date=date(2025, 1, 1))
     assert event1.is_all_day is True
-    assert event1.get_type_enum() == EventType.OTHER
 
     # Timed event
     event2 = Event(

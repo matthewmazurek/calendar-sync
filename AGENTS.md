@@ -123,12 +123,11 @@ def load_calendar(
 
 ### Naming Conventions
 
-- **Classes**: PascalCase (`CalendarProcessor`, `EventType`)
+- **Classes**: PascalCase (`CalendarProcessor`, `CalendarTemplate`)
 - **Functions/methods**: snake_case (`process_events`, `get_calendar`)
 - **Variables**: snake_case (`calendar_name`, `event_type`)
 - **Constants**: UPPER_SNAKE_CASE (`CALENDAR_EXTENSIONS`, `METADATA_FILENAME`)
 - **Private methods**: prefix with underscore (`_get_calendar_dir`)
-- **Enum members**: UPPER_SNAKE_CASE (`EventType.ON_CALL`)
 
 ### Docstrings
 

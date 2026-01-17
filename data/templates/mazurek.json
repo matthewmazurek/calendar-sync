@@ -12,11 +12,24 @@
             "apple_title": "Foothills Medical Centre"
         }
     },
+    "defaults": {
+        "busy": false,
+        "location": "work",
+        "time_periods": {
+            "AM": [
+                "0800",
+                "1200"
+            ],
+            "PM": [
+                "1230",
+                "1630"
+            ]
+        }
+    },
     "types": {
         "on_call": {
             "match": "on call",
             "label": "^(.+?)\\s+on call",
-            "location": "work",
             "consolidate": {
                 "group_by": "label",
                 "pattern_aware": true
@@ -32,7 +45,6 @@
                 "endo",
                 "DTP"
             ],
-            "location": "work",
             "consolidate": false,
             "time_periods": {
                 "AM": [
@@ -47,7 +59,6 @@
         },
         "ccsc": {
             "match": "ccsc",
-            "location": "work",
             "consolidate": false,
             "time_periods": {
                 "AM": [
@@ -62,7 +73,6 @@
         },
         "clinic": {
             "match": "clinic",
-            "location": "work",
             "consolidate": false
         },
         "admin": {
@@ -78,7 +88,7 @@
                 "vacation",
                 "away"
             ],
-            "busy": false
+            "location": null
         }
     }
 }

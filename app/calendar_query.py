@@ -54,7 +54,7 @@ class CalendarQuery:
             matching = [
                 e for e in matching
                 if (e.type and e.type.lower() == type_lower)
-                or e.get_type_enum().value.lower() == type_lower
+                or (not e.type and type_lower == "other")
             ]
 
         # Filter by location

@@ -91,9 +91,10 @@ def _list_calendars(
         if metadata:
             last_updated = metadata.last_updated
 
-        # Get display name from settings
+        # Get display name and created date from settings
         settings = repository.load_settings(cal_id)
         display_name = settings.name if settings else None
+        created = settings.created if settings else None
 
         calendar_info.append(
             CalendarInfo(
@@ -102,6 +103,7 @@ def _list_calendars(
                 config_path=config_display,
                 last_updated=last_updated,
                 name=display_name,
+                created=created,
             )
         )
 

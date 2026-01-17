@@ -27,7 +27,8 @@
                 "1230",
                 "1630"
             ]
-        }
+        },
+        "busy": true
     },
     "types": {
         "holiday": {
@@ -72,6 +73,7 @@
                 "Arbor Day",
                 "Daylight Saving"
             ],
+            "location": null,
             "suppress": false,
             "busy": false
         }
