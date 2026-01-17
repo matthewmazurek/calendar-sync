@@ -131,16 +131,16 @@ def restore(
             typer.echo("Restore cancelled.")
             return
 
-    # Get calendar directory (even if it doesn't exist yet)
-    calendar_dir = repository._get_calendar_dir(name)
+    # Get paths for this calendar (even if it doesn't exist yet)
+    paths = repository.paths(name)
 
     # Ensure calendar directory exists (for deleted calendars)
-    calendar_dir.mkdir(parents=True, exist_ok=True)
+    paths.directory.mkdir(parents=True, exist_ok=True)
 
     # Restore entire directory from git (includes calendar_data.json, calendar.ics, etc.)
-    if git_service.restore_directory_version(calendar_dir, target_commit):
+    if git_service.restore_directory_version(paths.directory, target_commit):
         # Get path for clickable link (ICS export file)
-        calendar_path = calendar_dir / "calendar.ics"
+        calendar_path = paths.export("ics")
 
         # Re-export ICS to ensure location_id references are resolved
         # (for calendars that use location_id)

@@ -11,6 +11,7 @@ from app.models.calendar import Calendar
 from app.models.metadata import CalendarMetadata, CalendarWithMetadata
 from app.models.settings import CalendarSettings
 from app.output.ics_writer import ICSWriter
+from app.storage.calendar_paths import CalendarPaths
 from app.storage.calendar_storage import CalendarStorage
 from app.storage.git_service import GitService
 
@@ -29,7 +30,7 @@ class CalendarRepository:
         reader_registry: ReaderRegistry,
         canonical_filename: str = "data.json",
         settings_filename: str = "config.json",
-        ics_export_filename: str = "calendar.ics",
+        export_pattern: str = "calendar.{format}",
     ):
         """
         Initialize repository.
@@ -41,7 +42,7 @@ class CalendarRepository:
             reader_registry: ReaderRegistry instance (for ingesting source files)
             canonical_filename: Filename for canonical JSON storage
             settings_filename: Filename for calendar settings
-            ics_export_filename: Filename for ICS export
+            export_pattern: Pattern for export filenames (e.g., "calendar.{format}")
         """
         self.calendar_dir = calendar_dir
         self.storage = storage
@@ -49,45 +50,45 @@ class CalendarRepository:
         self.reader_registry = reader_registry
         self.canonical_filename = canonical_filename
         self.settings_filename = settings_filename
-        self.ics_export_filename = ics_export_filename
+        self.export_pattern = export_pattern
 
-    def _get_calendar_dir(self, name: str) -> Path:
-        """Get directory for named calendar."""
-        return self.calendar_dir / name
+    def paths(self, name: str) -> CalendarPaths:
+        """Get all paths for a calendar.
 
-    def _get_canonical_path(self, name: str) -> Path:
-        """Get path to canonical JSON storage file."""
-        return self._get_calendar_dir(name) / self.canonical_filename
+        Returns a CalendarPaths object with paths for all calendar files.
+        Paths are always returned regardless of whether files exist.
+        Use paths.exists or path.exists() to check existence.
 
-    def _get_ics_export_path(self, name: str) -> Path:
-        """Get path to ICS export file."""
-        return self._get_calendar_dir(name) / self.ics_export_filename
+        Args:
+            name: Calendar name/ID
 
-    def _get_settings_path(self, name: str) -> Path:
-        """Get path to calendar settings file."""
-        return self._get_calendar_dir(name) / self.settings_filename
+        Returns:
+            CalendarPaths with directory, data, settings, and export() method
+        """
+        directory = self.calendar_dir / name
+        return CalendarPaths(
+            directory=directory,
+            data=directory / self.canonical_filename,
+            settings=directory / self.settings_filename,
+            _export_pattern=self.export_pattern,
+        )
 
-    def _get_calendar_file_path(self, name: str, format: str = "ics") -> Path:
-        """Get path to calendar file (for backwards compatibility)."""
-        calendar_dir = self._get_calendar_dir(name)
-        return calendar_dir / f"calendar.{format}"
-
-    def load_calendar(self, name: str, format: str = "ics") -> CalendarWithMetadata | None:
+    def load_calendar(
+        self, name: str, format: str = "ics"
+    ) -> CalendarWithMetadata | None:
         """
         Load calendar by name from canonical JSON storage.
 
         The format parameter is kept for backwards compatibility but ignored.
         Calendars are always loaded from the canonical JSON format.
         """
-        calendar_dir = self._get_calendar_dir(name)
-        if not calendar_dir.exists():
+        paths = self.paths(name)
+        if not paths.directory.exists():
             return None
 
-        canonical_path = self._get_canonical_path(name)
-
         # Try loading from canonical JSON first
-        if canonical_path.exists():
-            return CalendarWithMetadata.load(canonical_path)
+        if paths.data.exists():
+            return CalendarWithMetadata.load(paths.data)
 
         return None
 
@@ -105,17 +106,15 @@ class CalendarRepository:
         Returns:
             CalendarWithMetadata or None if not found
         """
-        canonical_path = self._get_canonical_path(name)
-        content = self.git_service.get_file_at_commit(canonical_path, commit)
+        paths = self.paths(name)
+        content = self.git_service.get_file_at_commit(paths.data, commit)
 
         if content is None:
             return None
 
         return CalendarWithMetadata.model_validate_json(content.decode("utf-8"))
 
-    def save_json(
-        self, calendar: Calendar, metadata: CalendarMetadata
-    ) -> Path:
+    def save_json(self, calendar: Calendar, metadata: CalendarMetadata) -> Path:
         """
         Save calendar to canonical JSON format only (no ICS export, no commit).
 
@@ -129,8 +128,8 @@ class CalendarRepository:
         Returns:
             Path to canonical JSON file
         """
-        calendar_dir = self._get_calendar_dir(metadata.name)
-        calendar_dir.mkdir(parents=True, exist_ok=True)
+        paths = self.paths(metadata.name)
+        paths.directory.mkdir(parents=True, exist_ok=True)
 
         # Update metadata timestamp
         metadata.last_updated = datetime.now()
@@ -141,10 +140,9 @@ class CalendarRepository:
         )
 
         # Save to canonical JSON format
-        canonical_path = self._get_canonical_path(metadata.name)
-        calendar_with_metadata.save(canonical_path)
+        calendar_with_metadata.save(paths.data)
 
-        return canonical_path
+        return paths.data
 
     def save_calendar(
         self,
@@ -170,6 +168,8 @@ class CalendarRepository:
         Returns:
             Path to ICS export file (for subscription URLs)
         """
+        paths = self.paths(metadata.name)
+
         # Save JSON first
         self.save_json(calendar, metadata)
 
@@ -177,15 +177,14 @@ class CalendarRepository:
         calendar_with_metadata = CalendarWithMetadata(
             calendar=calendar, metadata=metadata
         )
-        ics_path = self._get_ics_export_path(metadata.name)
         ics_writer = ICSWriter()
-        ics_writer.write(calendar_with_metadata, ics_path, template=template)
+        ics_writer.write(calendar_with_metadata, paths.export("ics"), template=template)
 
         # Commit locally for versioning (always commit, even without --publish)
         self.git_service.commit_calendar_locally(metadata.name)
 
         # Return ICS path (used for subscription URLs)
-        return ics_path
+        return paths.export("ics")
 
     def export_ics(
         self,
@@ -213,20 +212,20 @@ class CalendarRepository:
         if calendar_with_metadata is None:
             raise CalendarNotFoundError(f"Calendar '{name}' not found")
 
-        ics_path = self._get_ics_export_path(name)
+        paths = self.paths(name)
         ics_writer = ICSWriter()
-        ics_writer.write(calendar_with_metadata, ics_path, template=template)
+        ics_writer.write(calendar_with_metadata, paths.export("ics"), template=template)
 
-        return ics_path
+        return paths.export("ics")
 
     def load_metadata(self, name: str) -> CalendarMetadata | None:
         """Load metadata from canonical JSON file."""
-        canonical_path = self._get_canonical_path(name)
-        if not canonical_path.exists():
+        paths = self.paths(name)
+        if not paths.data.exists():
             return None
 
         try:
-            calendar_with_metadata = CalendarWithMetadata.load(canonical_path)
+            calendar_with_metadata = CalendarWithMetadata.load(paths.data)
             return calendar_with_metadata.metadata
         except (OSError, ValueError):
             return None
@@ -240,12 +239,12 @@ class CalendarRepository:
         Returns:
             CalendarSettings or None if not found
         """
-        settings_path = self._get_settings_path(name)
-        if not settings_path.exists():
+        paths = self.paths(name)
+        if not paths.settings.exists():
             return None
 
         try:
-            return CalendarSettings.model_validate_json(settings_path.read_text())
+            return CalendarSettings.model_validate_json(paths.settings.read_text())
         except (OSError, ValueError):
             return None
 
@@ -259,13 +258,12 @@ class CalendarRepository:
         Returns:
             Path to settings file
         """
-        calendar_dir = self._get_calendar_dir(name)
-        calendar_dir.mkdir(parents=True, exist_ok=True)
+        paths = self.paths(name)
+        paths.directory.mkdir(parents=True, exist_ok=True)
 
-        settings_path = self._get_settings_path(name)
-        settings_path.write_text(settings.model_dump_json(indent=2, exclude_none=True))
+        paths.settings.write_text(settings.model_dump_json(indent=2, exclude_none=True))
 
-        return settings_path
+        return paths.settings
 
     def create_calendar(
         self,
@@ -292,8 +290,8 @@ class CalendarRepository:
         Raises:
             ValueError: If calendar already exists (config.json exists)
         """
-        settings_path = self._get_settings_path(calendar_id)
-        if settings_path.exists():
+        paths = self.paths(calendar_id)
+        if paths.settings.exists():
             raise ValueError(f"Calendar '{calendar_id}' already exists")
 
         settings = CalendarSettings(
@@ -320,8 +318,8 @@ class CalendarRepository:
             CalendarNotFoundError: If source calendar doesn't exist (no config.json)
             ValueError: If target calendar already exists
         """
-        old_dir = self._get_calendar_dir(old_name)
-        new_dir = self._get_calendar_dir(new_name)
+        old_paths = self.paths(old_name)
+        new_paths = self.paths(new_name)
 
         if not self.calendar_exists(old_name):
             raise CalendarNotFoundError(f"Calendar '{old_name}' not found")
@@ -329,11 +327,11 @@ class CalendarRepository:
             raise ValueError(f"Calendar '{new_name}' already exists")
 
         # Rename directory only — data.json metadata is ingestion context
-        shutil.move(str(old_dir), str(new_dir))
+        shutil.move(str(old_paths.directory), str(new_paths.directory))
 
     def calendar_exists(self, name: str) -> bool:
         """Check if a calendar exists (has config.json)."""
-        return self._get_settings_path(name).exists()
+        return self.paths(name).exists
 
     def list_calendars(self, include_deleted: bool = False) -> list[str]:
         """
@@ -355,7 +353,7 @@ class CalendarRepository:
             for d in self.calendar_dir.iterdir():
                 if d.is_dir() and not d.name.startswith("."):
                     # Only include if config.json exists
-                    if (d / self.settings_filename).exists():
+                    if self.paths(d.name).exists:
                         calendars.add(d.name)
 
         # If including deleted, check git history for calendar files
@@ -407,34 +405,40 @@ class CalendarRepository:
         Returns:
             List of (commit_hash, commit_date, commit_message) tuples
         """
-        canonical_path = self._get_canonical_path(name)
-        return self.git_service.get_file_versions(canonical_path)
+        paths = self.paths(name)
+        return self.git_service.get_file_versions(paths.data)
 
     def delete_calendar(self, name: str) -> None:
         """Delete calendar directory and all contents."""
-        calendar_dir = self._get_calendar_dir(name)
-        if calendar_dir.exists():
-            shutil.rmtree(calendar_dir)
+        paths = self.paths(name)
+        if paths.directory.exists():
+            shutil.rmtree(paths.directory)
 
     def get_calendar_path(self, name: str, format: str = "ics") -> Path | None:
         """
-        Get path to calendar export file (ICS).
+        Get path to calendar export file if it exists.
 
-        The format parameter is kept for backwards compatibility but always returns ICS path.
-        Returns path to calendar.ics file.
+        Args:
+            name: Calendar name
+            format: Export format (e.g., 'ics', 'json')
+
+        Returns:
+            Path to export file or None if not exists
         """
-        ics_path = self._get_ics_export_path(name)
-        if ics_path.exists():
-            return ics_path
+        paths = self.paths(name)
+        export_path = paths.export(format)
+        if export_path.exists():
+            return export_path
         return None
 
     def get_canonical_path(self, name: str) -> Path | None:
         """
-        Get path to canonical JSON storage file.
+        Get path to canonical JSON storage file if it exists.
 
-        Returns path to data.json file or None if not exists.
+        Returns:
+            Path to data.json file or None if not exists
         """
-        canonical_path = self._get_canonical_path(name)
-        if canonical_path.exists():
-            return canonical_path
+        paths = self.paths(name)
+        if paths.data.exists():
+            return paths.data
         return None

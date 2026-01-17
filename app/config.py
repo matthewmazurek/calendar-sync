@@ -22,7 +22,7 @@ class CalendarConfig(BaseModel):
     # File naming
     canonical_filename: str = Field(default="data.json")
     settings_filename: str = Field(default="config.json")
-    ics_export_filename: str = Field(default="calendar.ics")
+    export_pattern: str = Field(default="calendar.{format}")
     log_filename: str = Field(default="calendar_sync.log")
 
     # Templates

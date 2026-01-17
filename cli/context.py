@@ -65,7 +65,7 @@ class CLIContext:
                 self.config.calendar_dir,
                 remote_url=self.config.calendar_git_remote_url,
                 canonical_filename=self.config.canonical_filename,
-                ics_export_filename=self.config.ics_export_filename,
+                export_pattern=self.config.export_pattern,
                 default_remote=self.config.git_default_remote,
                 default_branch=self.config.git_default_branch,
             )
@@ -81,7 +81,7 @@ class CLIContext:
                 self.git_service,
                 self.reader_registry,
                 canonical_filename=self.config.canonical_filename,
-                ics_export_filename=self.config.ics_export_filename,
+                export_pattern=self.config.export_pattern,
             )
         return self._repository
 

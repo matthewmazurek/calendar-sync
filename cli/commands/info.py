@@ -56,8 +56,9 @@ def info(
     calendar = calendar_with_metadata.calendar
     metadata = calendar_with_metadata.metadata
 
-    # Get calendar path (ICS export)
-    calendar_path = repository.get_calendar_path(name)
+    # Get paths for this calendar
+    paths = repository.paths(name)
+    calendar_path = paths.export("ics")
 
     # ─────────────────────────────────────────────────────────────────────────
     # Header
@@ -117,11 +118,10 @@ def info(
         latest_commit_hash, latest_commit_date, latest_commit_message = versions[0]
 
         # Get current version (what's in working directory) - use canonical path
-        canonical_path = repository._get_canonical_path(name)
         current_commit_hash = None
-        if canonical_path.exists():
+        if paths.data.exists():
             current_commit_hash = repository.git_service.get_current_commit_hash(
-                canonical_path
+                paths.data
             )
 
         # Show current version

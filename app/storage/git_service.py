@@ -20,7 +20,7 @@ class GitService:
         remote_url: str | None = None,
         git_client: GitClient | None = None,
         canonical_filename: str = "data.json",
-        ics_export_filename: str = "calendar.ics",
+        export_pattern: str = "calendar.{format}",
         default_remote: str = "origin",
         default_branch: str = "main",
     ):
@@ -32,7 +32,7 @@ class GitService:
             remote_url: Optional remote URL override for subscription URLs
             git_client: GitClient implementation (defaults to SubprocessGitClient)
             canonical_filename: Filename for canonical JSON storage
-            ics_export_filename: Filename for ICS export
+            export_pattern: Pattern for export filenames (e.g., "calendar.{format}")
             default_remote: Default git remote name
             default_branch: Default git branch name (fallback)
         """
@@ -40,7 +40,7 @@ class GitService:
         self.remote_url = remote_url
         self.git_client = git_client or SubprocessGitClient()
         self.canonical_filename = canonical_filename
-        self.ics_export_filename = ics_export_filename
+        self.export_pattern = export_pattern
         self.default_remote = default_remote
         self.default_branch = default_branch
 
@@ -406,7 +406,7 @@ class GitService:
                 return
 
             # Stage deletion of calendar files (use git rm to track deletion)
-            calendar_file = calendar_dir / self.ics_export_filename
+            calendar_file = calendar_dir / self.export_pattern.format(format="ics")
             # Use git rm to stage deletion (works even if file doesn't exist in working dir)
             # --ignore-unmatch prevents error if file doesn't exist in git
             self.git_client.run_command(

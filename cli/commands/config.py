@@ -84,7 +84,7 @@ def config() -> None:
             "File Naming",
             [
                 ("canonical_filename", cfg.canonical_filename, "default"),
-                ("ics_export_filename", cfg.ics_export_filename, "default"),
+                ("export_pattern", cfg.export_pattern, "default"),
                 (
                     "log_filename",
                     cfg.log_filename,

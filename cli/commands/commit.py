@@ -18,42 +18,39 @@ def commit_command(
     ],
     message: Annotated[
         str | None,
-        typer.Option(
-            "--message", "-m", help="Custom commit message"
-        ),
+        typer.Option("--message", "-m", help="Custom commit message"),
     ] = None,
 ) -> None:
     """
     Commit calendar files to git.
-    
+
     This is a pure git operation that stages and commits all files
     in the calendar directory (data.json, calendar.ics, config.json, etc.)
     without generating or modifying any files.
-    
+
     The commit is local only. Use 'push' to push to remote.
     """
     ctx = get_context()
     repository = ctx.repository
     git_service = ctx.git_service
 
+    # Get paths for this calendar
+    paths = repository.paths(calendar_name)
+
     # Check if calendar directory exists
-    calendar_dir = repository._get_calendar_dir(calendar_name)
-    if not calendar_dir.exists():
-        logger.error(f"Calendar directory not found: {calendar_dir.resolve()}")
+    if not paths.directory.exists():
+        logger.error(f"Calendar directory not found: {paths.directory.resolve()}")
         sys.exit(1)
 
     # Check what files exist
-    canonical_path = repository._get_canonical_path(calendar_name)
-    ics_path = repository._get_ics_export_path(calendar_name)
-    
     files_to_commit = []
-    if canonical_path.exists():
-        files_to_commit.append(canonical_path.name)
-    if ics_path.exists():
-        files_to_commit.append(ics_path.name)
-    
+    if paths.data.exists():
+        files_to_commit.append(paths.data.name)
+    if paths.export("ics").exists():
+        files_to_commit.append(paths.export("ics").name)
+
     if not files_to_commit:
-        print(f"No calendar files found in {calendar_dir.resolve()}")
+        print(f"No calendar files found in {paths.directory.resolve()}")
         sys.exit(1)
 
     print(f"Files to commit: {', '.join(files_to_commit)}")
@@ -61,12 +58,12 @@ def commit_command(
     # Commit using git service
     try:
         git_service.commit_calendar_locally(calendar_name, message=message)
-        
+
         print(f"{typer.style('✓', fg=typer.colors.GREEN, bold=True)} Committed to git")
         print(f"  Calendar: {calendar_name}")
-        
+
         logger.info(f"Committed calendar '{calendar_name}' to git")
-        
+
     except Exception as e:
         logger.error(f"Commit failed: {e}")
         sys.exit(1)

@@ -73,16 +73,15 @@ def _list_calendars(
     # Collect calendar info
     calendar_info = []
     for cal_id in calendars:
-        cal_dir = repository._get_calendar_dir(cal_id)
-        archived = not cal_dir.exists()
+        paths = repository.paths(cal_id)
+        archived = not paths.directory.exists()
 
         # Get config file path (relative to cwd for terminal links)
-        config_path = repository._get_settings_path(cal_id)
-        if config_path.exists():
+        if paths.settings.exists():
             try:
-                config_display = str(config_path.resolve().relative_to(Path.cwd()))
+                config_display = str(paths.settings.resolve().relative_to(Path.cwd()))
             except ValueError:
-                config_display = str(config_path.resolve())
+                config_display = str(paths.settings.resolve())
         else:
             config_display = "-"
 
@@ -138,15 +137,16 @@ def _list_versions(
     else:
         versions_data = all_versions
 
-    # Determine calendar file path for display (ICS is what users subscribe to)
+    # Get paths for this calendar
+    paths = repository.paths(name)
     git_service = repository.git_service
     repo_root = git_service.repo_root
-    calendar_path = repository.get_calendar_path(name, format="ics")
-    if calendar_path is None:
-        calendar_path = repository._get_ics_export_path(name)
 
-    # Get canonical path for version tracking (data.json is the source of truth)
-    canonical_path = repository._get_canonical_path(name)
+    # ICS export path for display (what users subscribe to)
+    calendar_path = paths.export("ics")
+
+    # Canonical path for version tracking (data.json is the source of truth)
+    canonical_path = paths.data
 
     # Find which commit the current canonical file matches
     current_commit_hash = None

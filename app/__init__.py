@@ -142,9 +142,7 @@ def create_app():
                     return handle_error(e)
 
                 # Save calendar (stores as JSON, exports to ICS)
-                filepath = repository.save_calendar(
-                    result.calendar, result.metadata
-                )
+                filepath = repository.save_calendar(result.calendar, result.metadata)
 
                 # Publish to git if requested
                 published = False
@@ -194,9 +192,7 @@ def create_app():
                     return handle_error(e)
 
                 # Save updated calendar (stores as JSON, exports to ICS)
-                filepath = repository.save_calendar(
-                    result.calendar, result.metadata
-                )
+                filepath = repository.save_calendar(result.calendar, result.metadata)
 
                 # Publish to git if requested
                 published = False
@@ -316,8 +312,8 @@ def create_app():
         purge_history = request.args.get("purge_history", "false").lower() == "true"
 
         try:
-            calendar_dir = repository._get_calendar_dir(calendar_name)
-            calendar_exists = calendar_dir.exists()
+            paths = repository.paths(calendar_name)
+            calendar_exists = paths.directory.exists()
 
             if purge_history:
                 # Hard delete: remove from git history entirely

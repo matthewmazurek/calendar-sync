@@ -284,8 +284,8 @@ def test_calendar_repository_create_calendar(repository):
     assert settings_path.name == "config.json"
 
     # Calendar directory should exist
-    calendar_dir = repository._get_calendar_dir("new_calendar")
-    assert calendar_dir.exists()
+    paths = repository.paths("new_calendar")
+    assert paths.directory.exists()
 
     # Should be in list
     calendars = repository.list_calendars()
@@ -300,6 +300,28 @@ def test_calendar_repository_create_calendar_already_exists(repository):
     # Try to create again
     with pytest.raises(ValueError, match="already exists"):
         repository.create_calendar("existing_calendar")
+
+
+def test_calendar_repository_paths(repository, temp_calendar_dir):
+    """Test CalendarRepository paths() returns correct CalendarPaths."""
+    paths = repository.paths("test_calendar")
+
+    # Verify all paths are correct
+    assert paths.directory == temp_calendar_dir / "test_calendar"
+    assert paths.data == temp_calendar_dir / "test_calendar" / "data.json"
+    assert paths.settings == temp_calendar_dir / "test_calendar" / "config.json"
+    assert paths.export("ics") == temp_calendar_dir / "test_calendar" / "calendar.ics"
+    assert paths.export("json") == temp_calendar_dir / "test_calendar" / "calendar.json"
+
+    # Calendar doesn't exist yet
+    assert not paths.exists
+
+    # Create the calendar
+    repository.create_calendar("test_calendar")
+
+    # Now it should exist
+    assert paths.exists
+    assert repository.paths("test_calendar").exists
 
 
 def test_calendar_repository_load_save_settings(repository):

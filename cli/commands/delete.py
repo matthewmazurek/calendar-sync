@@ -31,13 +31,13 @@ def delete(
     repository = ctx.repository
     git_service = ctx.git_service
 
-    calendar_dir = repository._get_calendar_dir(name)
-    calendar_exists = calendar_dir.exists()
+    paths = repository.paths(name)
+    calendar_exists = paths.directory.exists()
 
     # Show confirmation prompt unless --force is set
     if not force:
         print(f"\nDelete calendar '{name}'")
-        print(f"  Directory: {calendar_dir.resolve()}")
+        print(f"  Directory: {paths.directory.resolve()}")
 
         if purge_history:
             print(
