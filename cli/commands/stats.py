@@ -22,6 +22,22 @@ def stats(
         bool,
         typer.Option("--weeks", "-w", help="Show half-days breakdown by week"),
     ] = False,
+    include_non_busy: Annotated[
+        bool,
+        typer.Option(
+            "--include-non-busy",
+            "-b",
+            help="Include non-busy events (holidays, vacation) in coverage",
+        ),
+    ] = False,
+    include_other: Annotated[
+        bool,
+        typer.Option(
+            "--include-other",
+            "-o",
+            help="Include 'other' type events in coverage",
+        ),
+    ] = False,
 ) -> None:
     """Analyze calendar events: counts by type, coverage metrics, and scheduling patterns.
 
@@ -35,7 +51,12 @@ def stats(
     calendar = calendar_with_metadata.calendar
 
     # Build statistics
-    stats_data = build_calendar_statistics(calendar, year=year)
+    stats_data = build_calendar_statistics(
+        calendar,
+        year=year,
+        include_non_busy=include_non_busy,
+        include_other=include_other,
+    )
 
     # Render statistics
     renderer.render_statistics(

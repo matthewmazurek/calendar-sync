@@ -31,12 +31,16 @@ class CalendarStatistics(BaseModel):
 def build_calendar_statistics(
     calendar: Calendar,
     year: int | None = None,
+    include_non_busy: bool = False,
+    include_other: bool = False,
 ) -> CalendarStatistics:
     """Build detailed statistics for a calendar.
 
     Args:
         calendar: Calendar to analyze.
         year: Optional year to filter events by.
+        include_non_busy: Include non-busy events (holidays, vacation) in coverage.
+        include_other: Include 'other' type events in coverage.
 
     Returns:
         CalendarStatistics with detailed event and coverage stats.
@@ -71,19 +75,21 @@ def build_calendar_statistics(
     for event in events:
         events_by_year[event.date.year] += 1
 
-    # Half days calculation (exclude "other" type events and busy=False events)
+    # Half days calculation (optionally exclude "other" type and busy=False events)
     halfdays_booked: Dict[str, Dict[str, bool]] = {}
     excluded_non_busy = 0
     excluded_other_type = 0
     for event in events:
-        # Exclude busy=False events from coverage
+        # Exclude busy=False events from coverage (unless include_non_busy)
         if not event.busy:
-            excluded_non_busy += 1
-            continue
+            if not include_non_busy:
+                excluded_non_busy += 1
+                continue
         event_type = (event.type if event.type else "other").lower()
         if event_type == "other":
-            excluded_other_type += 1
-            continue
+            if not include_other:
+                excluded_other_type += 1
+                continue
         _apply_event_to_halfdays(halfdays_booked, event)
 
     total_halfdays = sum(
