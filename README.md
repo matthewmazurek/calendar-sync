@@ -1,6 +1,14 @@
 # Calendar Sync
 
-A Flask app to sync calendar data from Word documents.
+A Python CLI tool for syncing and managing calendar data from various sources including Word documents, ICS files, and JSON.
+
+## Features
+
+- **Multiple input formats**: Import calendars from Word/DOCX, ICS, or JSON files
+- **Flexible output**: Export calendars as ICS or JSON
+- **Git integration**: Version control for calendar data with automatic commit and push
+- **Template system**: Configurable event processing rules
+- **Calendar merging**: Intelligently merge and update calendar data by year
 
 ## Installation
 
@@ -10,71 +18,68 @@ poetry install
 
 ## Usage
 
-### CLI Tool
-
 ```bash
-calendar-sync [command]
+calendar-sync [command] [options]
 ```
 
-Available commands: `sync`, `ls`, `restore`, `info`, `delete`, `publish`, `git-setup`, `config`
+### Commands
 
-### Flask App
+| Command | Description |
+|---------|-------------|
+| `sync` | Sync calendar from a source file (ingest + export + commit) |
+| `ingest` | Import calendar data from a file |
+| `export` | Export calendar to ICS or JSON format |
+| `commit` | Commit calendar changes to git |
+| `push` | Push committed changes to remote |
+| `ls` | List all calendars |
+| `show` | Display calendar events |
+| `search` | Search for events |
+| `info` | Show calendar information and metadata |
+| `stats` | Display calendar statistics |
+| `diff` | Show differences between calendar versions |
+| `restore` | Restore a deleted calendar |
+| `delete` | Delete a calendar |
+| `git-setup` | Configure git repository for calendar storage |
+| `config` | View or set configuration options |
+| `template` | Manage calendar templates |
 
-Start the Flask development server:
+### Examples
 
+Sync a calendar from a Word document:
 ```bash
-poetry run flask --app app run --port 5001
+calendar-sync sync my-calendar schedule.docx
 ```
 
-Or with Python:
-
+List all calendars:
 ```bash
-poetry run python -m flask --app app run --port 5001
+calendar-sync ls
 ```
 
-**Note:** Port 5000 is often used by macOS AirPlay Receiver. Use port 5001 or another available port to avoid conflicts.
-
-#### API Endpoints
-
-**POST /calendars/<calendar_name>** - Create or update a calendar
-- Upload a file (ICS, JSON, or Word document)
-- Query parameters:
-  - `format` - Output format: `ics` or `json` (default: `ics`)
-  - `year` - Year to replace when updating existing calendar (required for updates)
-  - `publish` - Set to `true` to commit and push to git
-
-Example:
+Show calendar events:
 ```bash
-curl -X POST "http://localhost:5001/calendars/my-calendar?format=ics&publish=true" \
-  -F "file=@calendar.docx"
+calendar-sync show my-calendar
 ```
 
-**GET /calendars/<calendar_name>** - Get a calendar
-- Query parameters:
-  - `format` - Format to return: `ics` or `json` (default: `ics`)
-
-Example:
+Export calendar to ICS:
 ```bash
-curl "http://localhost:5001/calendars/my-calendar?format=ics" -o calendar.ics
+calendar-sync export my-calendar -o calendar.ics
 ```
 
-**GET /calendars** - List all calendars
-- Query parameters:
-  - `include_deleted` - Set to `true` to include archived calendars
+### Global Options
 
-Example:
-```bash
-curl "http://localhost:5001/calendars"
-```
+- `--verbose, -v`: Show debug output
+- `--quiet, -q`: Only show errors
+- `--version`: Show version and exit
+- `--help`: Show help message
 
-**DELETE /calendars/<calendar_name>** - Delete a calendar
-- Query parameters:
-  - `purge_history` - Set to `true` to remove from git history entirely
+## Configuration
 
-Example:
-```bash
-curl -X DELETE "http://localhost:5001/calendars/my-calendar"
-```
+Configuration can be set via environment variables or a `.env` file:
+
+- `CALENDAR_DIR`: Directory for storing calendar data
+- `CALENDAR_FORMAT`: Default output format (`ics` or `json`)
+- `CALENDAR_GIT_REMOTE_URL`: Git remote URL for syncing
+- `DEFAULT_TEMPLATE`: Default template name for event processing
 
 ## License
 

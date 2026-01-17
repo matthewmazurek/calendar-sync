@@ -1,7 +1,7 @@
 [tool.poetry]
 name = "calendar-sync"
 version = "0.1.0"
-description = "A Flask app to sync calendar data from Word documents"
+description = "A CLI tool for syncing and managing calendar data from various sources"
 authors = ["Matthew Mazurek"]
 readme = "README.md"
 packages = [{include = "app"}]
