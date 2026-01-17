@@ -125,4 +125,15 @@ class StatsRenderer:
         Args:
             calendar_name: Name of the calendar that wasn't found.
         """
-        console.print(f"\nCalendar '{calendar_name}' not found")
+        console.print(f"\n[red]Calendar '{calendar_name}' not found[/red]")
+
+    def render_no_data(self, calendar_name: str) -> None:
+        """Render calendar has no data message.
+
+        Args:
+            calendar_name: Name of the calendar with no data.
+        """
+        console.print(
+            f"\n[yellow]Calendar '{calendar_name}' has no data.[/yellow]\n"
+            f"Run [cyan]calsync ingest {calendar_name} <source>[/cyan] to add events."
+        )

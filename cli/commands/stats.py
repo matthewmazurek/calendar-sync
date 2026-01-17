@@ -30,9 +30,15 @@ def stats(
     repository = ctx.repository
     renderer = StatsRenderer()
 
+    # Check if calendar exists (has config.json)
+    if not repository.calendar_exists(name):
+        renderer.render_not_found(name)
+        raise typer.Exit(1)
+
+    # Check if calendar has data (has data.json)
     calendar_with_metadata = repository.load_calendar(name)
     if calendar_with_metadata is None:
-        renderer.render_not_found(name)
+        renderer.render_no_data(name)
         raise typer.Exit(1)
 
     calendar = calendar_with_metadata.calendar
