@@ -5,7 +5,6 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
-from app.constants import CANONICAL_FILENAME, ICS_EXPORT_FILENAME
 from app.exceptions import GitCommandError, GitError, GitRepositoryNotFoundError
 from app.storage.git_client import GitClient, SubprocessGitClient
 
@@ -20,6 +19,10 @@ class GitService:
         repo_root: Path,
         remote_url: str | None = None,
         git_client: GitClient | None = None,
+        canonical_filename: str = "calendar_data.json",
+        ics_export_filename: str = "calendar.ics",
+        default_remote: str = "origin",
+        default_branch: str = "main",
     ):
         """
         Initialize GitService.
@@ -28,10 +31,18 @@ class GitService:
             repo_root: Root directory of git repository
             remote_url: Optional remote URL override for subscription URLs
             git_client: GitClient implementation (defaults to SubprocessGitClient)
+            canonical_filename: Filename for canonical JSON storage
+            ics_export_filename: Filename for ICS export
+            default_remote: Default git remote name
+            default_branch: Default git branch name (fallback)
         """
         self.repo_root = repo_root
         self.remote_url = remote_url
         self.git_client = git_client or SubprocessGitClient()
+        self.canonical_filename = canonical_filename
+        self.ics_export_filename = ics_export_filename
+        self.default_remote = default_remote
+        self.default_branch = default_branch
 
     def _get_relative_path(self, path: Path) -> Path:
         """
@@ -65,10 +76,11 @@ class GitService:
             return Path(result.stdout.strip())
         return None
 
-    def _get_remote_url(self, remote_name: str = "origin") -> str | None:
+    def _get_remote_url(self, remote_name: str | None = None) -> str | None:
         """Get remote URL from git config."""
+        remote = remote_name or self.default_remote
         result = self.git_client.run_command(
-            ["git", "remote", "get-url", remote_name], self.repo_root
+            ["git", "remote", "get-url", remote], self.repo_root
         )
         if result.returncode == 0:
             return result.stdout.strip()
@@ -83,8 +95,7 @@ class GitService:
             branch = result.stdout.strip()
             if branch:
                 return branch
-        # Default to master or main
-        return "master"
+        return self.default_branch
 
     # Version operations (from GitVersionService)
 
@@ -283,12 +294,12 @@ class GitService:
         # File has uncommitted changes (doesn't match any commit)
         return None
 
-    def get_remote_url(self, remote_name: str = "origin") -> str | None:
+    def get_remote_url(self, remote_name: str | None = None) -> str | None:
         """
         Get the URL of a git remote.
 
         Args:
-            remote_name: Name of the remote (default: "origin")
+            remote_name: Name of the remote (defaults to configured default_remote)
 
         Returns:
             Remote URL if found, None otherwise
@@ -296,8 +307,9 @@ class GitService:
         if not self._is_git_repo():
             return None
 
+        remote = remote_name or self.default_remote
         result = self.git_client.run_command(
-            ["git", "remote", "get-url", remote_name], self.repo_root
+            ["git", "remote", "get-url", remote], self.repo_root
         )
 
         if result.returncode != 0:
@@ -394,7 +406,7 @@ class GitService:
                 return
 
             # Stage deletion of calendar files (use git rm to track deletion)
-            calendar_file = calendar_dir / ICS_EXPORT_FILENAME
+            calendar_file = calendar_dir / self.ics_export_filename
             # Use git rm to stage deletion (works even if file doesn't exist in working dir)
             # --ignore-unmatch prevents error if file doesn't exist in git
             self.git_client.run_command(
@@ -539,8 +551,8 @@ class GitService:
 
         # Files to stage (in order of priority)
         files_to_stage = [
-            calendar_dir / CANONICAL_FILENAME,  # calendar_data.json
-            calendar_dir / ICS_EXPORT_FILENAME,  # calendar.ics
+            calendar_dir / self.canonical_filename,  # calendar_data.json
+            calendar_dir / self.ics_export_filename,  # calendar.ics
         ]
 
         for file_path in files_to_stage:
@@ -607,15 +619,17 @@ class GitService:
         # Check if branch has upstream tracking
         if not self._has_upstream_branch(branch):
             # Check if remote exists
-            remote_url = self.get_remote_url("origin")
+            remote_url = self.get_remote_url()
             if not remote_url:
                 raise GitCommandError(
-                    "No remote 'origin' configured. Cannot set upstream branch."
+                    f"No remote '{self.default_remote}' configured. "
+                    "Cannot set upstream branch."
                 )
 
             # Push with --set-upstream to configure tracking
             result = self.git_client.run_command(
-                ["git", "push", "--set-upstream", "origin", branch], repo_root
+                ["git", "push", "--set-upstream", self.default_remote, branch],
+                repo_root,
             )
         else:
             # Branch has upstream, use regular push
@@ -624,4 +638,4 @@ class GitService:
         if result.returncode != 0:
             raise GitCommandError(f"Failed to push changes: {result.stderr}")
 
-        logger.info(f"Pushed changes to remote.")
+        logger.info("Pushed changes to remote.")

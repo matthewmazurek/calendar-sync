@@ -64,10 +64,10 @@ def test_get_branch():
         branch = service._get_branch()
         assert branch == "main"
 
-        # Test fallback to master
+        # Test fallback to default branch (configured as "main" by default)
         mock_run.return_value = MagicMock(returncode=1, stdout="")
         branch = service._get_branch()
-        assert branch == "master"
+        assert branch == "main"  # Uses default_branch from config
 
 
 def test_parse_remote_url_ssh():

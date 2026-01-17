@@ -4,14 +4,22 @@ import logging
 import sys
 from pathlib import Path
 
+from app.config import CalendarConfig
 
-def setup_logging(verbose: bool = False, quiet: bool = False) -> None:
+
+def setup_logging(
+    verbose: bool = False, quiet: bool = False, config: CalendarConfig | None = None
+) -> None:
     """Configure logging with separate formatters for file and console.
 
     Args:
         verbose: If True, set console to DEBUG level
         quiet: If True, set console to ERROR level only
+        config: Optional CalendarConfig for log directory/filename settings
     """
+    if config is None:
+        config = CalendarConfig.from_env()
+
     # File formatter: includes timestamp
     file_formatter = logging.Formatter("%(asctime)s - %(levelname)s - %(message)s")
 
@@ -19,11 +27,10 @@ def setup_logging(verbose: bool = False, quiet: bool = False) -> None:
     console_formatter = logging.Formatter("%(levelname)s: %(message)s")
 
     # Ensure logs directory exists
-    logs_dir = Path("logs")
-    logs_dir.mkdir(exist_ok=True)
+    config.log_dir.mkdir(exist_ok=True)
 
     # File handler (with timestamp)
-    file_handler = logging.FileHandler(logs_dir / "calendar_sync.log")
+    file_handler = logging.FileHandler(config.log_dir / config.log_filename)
     file_handler.setFormatter(file_formatter)
     file_handler.setLevel(logging.DEBUG)
 

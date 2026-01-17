@@ -17,6 +17,8 @@ class SubscriptionUrlGenerator:
         repo_root: Path,
         remote_url: str | None = None,
         git_client: GitClient | None = None,
+        default_remote: str = "origin",
+        default_branch: str = "main",
     ):
         """
         Initialize SubscriptionUrlGenerator.
@@ -25,10 +27,14 @@ class SubscriptionUrlGenerator:
             repo_root: Root directory of git repository
             remote_url: Optional remote URL override
             git_client: GitClient implementation (defaults to SubprocessGitClient)
+            default_remote: Default git remote name
+            default_branch: Default git branch name (fallback)
         """
         self.repo_root = repo_root
         self.remote_url = remote_url
         self.git_client = git_client or SubprocessGitClient()
+        self.default_remote = default_remote
+        self.default_branch = default_branch
 
     def _get_remote_url(self) -> str | None:
         """Get remote URL from git config."""
@@ -36,7 +42,7 @@ class SubscriptionUrlGenerator:
             return self.remote_url
 
         result = self.git_client.run_command(
-            ["git", "remote", "get-url", "origin"], self.repo_root
+            ["git", "remote", "get-url", self.default_remote], self.repo_root
         )
         if result.returncode == 0:
             return result.stdout.strip()
@@ -51,8 +57,7 @@ class SubscriptionUrlGenerator:
             branch = result.stdout.strip()
             if branch:
                 return branch
-        # Default to master or main
-        return "master"
+        return self.default_branch
 
     def _parse_remote_url(self, remote_url: str) -> tuple[str | None, str | None]:
         """

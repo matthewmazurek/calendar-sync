@@ -7,7 +7,6 @@ from pathlib import Path
 import pytest
 
 from app.config import CalendarConfig
-from app.constants import DEFAULT_TEMPLATE
 from app.ingestion.ics_reader import ICSReader
 from app.ingestion.word_reader import WordReader
 from app.models.metadata import CalendarMetadata, CalendarWithMetadata
@@ -36,7 +35,7 @@ def test_template_word_reader_type_assignment():
 
     # Load template
     config = CalendarConfig.from_env()
-    template = load_template(DEFAULT_TEMPLATE, config.template_dir)
+    template = load_template(config.default_template, config.template_dir)
 
     # Read with template
     reader = WordReader()
@@ -65,7 +64,7 @@ def test_end_to_end_template_vs_expected_ics():
 
     # Load template (use medical_default since mazurek suppresses holidays)
     config = CalendarConfig.from_env()
-    template = load_template(DEFAULT_TEMPLATE, config.template_dir)
+    template = load_template(config.default_template, config.template_dir)
 
     # Read and process with template
     word_reader = WordReader()
