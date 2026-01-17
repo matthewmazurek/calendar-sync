@@ -69,7 +69,7 @@ def info(
     # ─────────────────────────────────────────────────────────────────────────
     # Overview
     # ─────────────────────────────────────────────────────────────────────────
-    print(f"\nPath: {calendar_path}")
+    print(f"\nPath: {calendar_path.resolve()}")
 
     # Calculate date range from events
     if calendar.events:

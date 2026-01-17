@@ -39,7 +39,7 @@ def commit_command(
     # Check if calendar directory exists
     calendar_dir = repository._get_calendar_dir(calendar_name)
     if not calendar_dir.exists():
-        logger.error(f"Calendar directory not found: {calendar_dir}")
+        logger.error(f"Calendar directory not found: {calendar_dir.resolve()}")
         sys.exit(1)
 
     # Check what files exist
@@ -53,7 +53,7 @@ def commit_command(
         files_to_commit.append(ics_path.name)
     
     if not files_to_commit:
-        print(f"No calendar files found in {calendar_dir}")
+        print(f"No calendar files found in {calendar_dir.resolve()}")
         sys.exit(1)
 
     print(f"Files to commit: {', '.join(files_to_commit)}")

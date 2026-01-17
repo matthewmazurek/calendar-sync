@@ -38,7 +38,7 @@ def delete(
     # Show confirmation prompt unless --force is set
     if not force:
         print(f"\nDelete calendar '{name}'")
-        print(f"  Directory: {calendar_dir}")
+        print(f"  Directory: {calendar_dir.resolve()}")
 
         if purge_history:
             print(

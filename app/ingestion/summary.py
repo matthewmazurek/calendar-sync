@@ -24,7 +24,8 @@ class CalendarStatistics(BaseModel):
     total_halfdays: int
     halfdays_by_week: dict[str, int]  # ISO week -> count
     weekly_coverage: float | None  # avg half days per week
-    excluded_events: int  # events excluded from coverage (busy=False)
+    excluded_non_busy: int  # events excluded from coverage (busy=False)
+    excluded_other_type: int  # events excluded from coverage (type='other')
 
 
 def build_calendar_statistics(
@@ -72,15 +73,18 @@ def build_calendar_statistics(
 
     # Half days calculation (exclude "other" type events and busy=False events)
     halfdays_booked: Dict[str, Dict[str, bool]] = {}
-    excluded_events = 0
+    excluded_non_busy = 0
+    excluded_other_type = 0
     for event in events:
         # Exclude busy=False events from coverage
         if not event.busy:
-            excluded_events += 1
+            excluded_non_busy += 1
             continue
         event_type = (event.type or event.get_type_enum().value).lower()
-        if event_type != "other":
-            _apply_event_to_halfdays(halfdays_booked, event)
+        if event_type == "other":
+            excluded_other_type += 1
+            continue
+        _apply_event_to_halfdays(halfdays_booked, event)
 
     total_halfdays = sum(
         1 for slots in halfdays_booked.values() for booked in slots.values() if booked
@@ -109,7 +113,8 @@ def build_calendar_statistics(
         total_halfdays=total_halfdays,
         halfdays_by_week=dict(halfdays_by_week),
         weekly_coverage=weekly_coverage,
-        excluded_events=excluded_events,
+        excluded_non_busy=excluded_non_busy,
+        excluded_other_type=excluded_other_type,
     )
 
 

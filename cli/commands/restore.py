@@ -162,7 +162,7 @@ def restore(
         print(
             f"\n{typer.style('✓', fg=typer.colors.GREEN, bold=True)} Calendar restored to {commit_display}"
         )
-        print(f"  {calendar_path}")
+        print(f"  {calendar_path.resolve()}")
     else:
         logger.error(f"Failed to restore calendar '{name}' to {commit_display}")
         raise typer.Exit(1)

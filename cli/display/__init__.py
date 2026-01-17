@@ -7,6 +7,7 @@ This module provides renderers for various display contexts:
 - DiffRenderer: Calendar diff visualization
 - StatsRenderer: Statistics display
 - SummaryRenderer: Ingestion/processing summaries
+- TemplateRenderer: Template configuration display
 
 It also provides:
 - console: Shared Rich console instance
@@ -25,6 +26,7 @@ from cli.display.rich_renderer import RichEventRenderer
 from cli.display.stats_renderer import StatsRenderer
 from cli.display.summary_renderer import SummaryRenderer
 from cli.display.table_renderer import CalendarInfo, TableRenderer, VersionInfo
+from cli.display.template_renderer import TemplateRenderer
 
 __all__ = [
     # Console
@@ -37,6 +39,7 @@ __all__ = [
     "DiffRenderer",
     "StatsRenderer",
     "SummaryRenderer",
+    "TemplateRenderer",
     # Data classes
     "CalendarInfo",
     "VersionInfo",

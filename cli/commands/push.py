@@ -53,7 +53,7 @@ def push(
     print(f"{'━' * 40}")
 
     # Calendar info
-    print(f"\nCalendar: {latest_path}")
+    print(f"\nCalendar: {latest_path.resolve()}")
     print(f"  {event_count} events")
 
     # ─────────────────────────────────────────────────────────────────────────

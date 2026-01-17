@@ -57,7 +57,7 @@ class TableRenderer:
             return
 
         console.print(
-            f"Listing calendars at {calendar_dir} ({archived_count} archived):"
+            f"Listing calendars at {calendar_dir.resolve()} ({archived_count} archived):"
         )
         console.print()
 
@@ -107,7 +107,7 @@ class TableRenderer:
             return
 
         console.print(
-            f"Versions for calendar '{calendar_name}' ({calendar_path}) ({total_versions} total):"
+            f"Versions for calendar '{calendar_name}' ({calendar_path.resolve()}) ({total_versions} total):"
         )
         console.print()
 

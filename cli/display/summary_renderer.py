@@ -125,4 +125,4 @@ class SummaryRenderer:
         """
         console.print(f"\n[bold green]✓[/bold green] {message}")
         if path:
-            console.print(f"  {path}")
+            console.print(f"  {path.resolve()}")

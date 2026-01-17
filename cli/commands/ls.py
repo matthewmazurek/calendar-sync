@@ -90,7 +90,7 @@ def _list_calendars(repository, config, renderer: TableRenderer, include_archive
             CalendarInfo(
                 name=cal_name,
                 archived=archived,
-                path=str(cal_path) if cal_path else "-",
+                path=str(cal_path.resolve()) if cal_path else "-",
                 last_updated=last_updated,
             )
         )

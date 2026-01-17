@@ -87,13 +87,15 @@ class StatsRenderer:
 
     def _render_coverage(self, stats_data: CalendarStatistics) -> None:
         """Render coverage statistics section."""
-        console.print(
-            "\n[bold]Coverage[/bold] [dim](excluding 'other' type events):[/dim]"
-        )
-        if stats_data.excluded_events > 0:
+        console.print("\n[bold]Coverage:[/bold]")
+        if stats_data.excluded_non_busy > 0:
             console.print(
-                f"  [dim]Excluded {stats_data.excluded_events} non-busy events "
+                f"  [dim]Excluded {stats_data.excluded_non_busy} non-busy events "
                 "(holidays, vacation)[/dim]"
+            )
+        if stats_data.excluded_other_type > 0:
+            console.print(
+                f"  [dim]Excluded {stats_data.excluded_other_type} 'other' type events[/dim]"
             )
         console.print(f"  Total half-days booked: {stats_data.total_halfdays}")
         if stats_data.weekly_coverage is not None:

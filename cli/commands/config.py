@@ -59,7 +59,7 @@ def config() -> None:
     
     # Calendar directory
     source_dir = get_source("CALENDAR_DIR", str(config_obj.calendar_dir), str(default_config.calendar_dir))
-    typer.echo(f"{'calendar_dir:':<{label_width}} {config_obj.calendar_dir} ({source_dir})")
+    typer.echo(f"{'calendar_dir:':<{label_width}} {config_obj.calendar_dir.resolve()} ({source_dir})")
     
     # LS default limit
     source_limit = get_source("LS_DEFAULT_LIMIT", config_obj.ls_default_limit, default_config.ls_default_limit)

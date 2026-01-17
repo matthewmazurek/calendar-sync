@@ -1,16 +1,84 @@
-"""Display available templates and template directory."""
+"""Display available templates or show compiled template details."""
 
 import json
 from pathlib import Path
 
 import typer
+from typing_extensions import Annotated
 
 from app.models.template_loader import load_template
 from cli.context import get_context
+from cli.display.template_renderer import TemplateRenderer
 
 
-def template() -> None:
-    """Display available templates and template directory."""
+def template(
+    name: Annotated[
+        str | None,
+        typer.Argument(help="Template name to view (omit to list all templates)"),
+    ] = None,
+    detail: Annotated[
+        bool,
+        typer.Option("--detail", "-d", help="Show expanded detail view"),
+    ] = False,
+) -> None:
+    """Display available templates or show compiled template details.
+
+    Without a name argument, lists all available templates.
+    With a name, shows the compiled template configuration (with inherited values).
+
+    Use --detail for an expanded view showing all fields for each event type.
+    """
+    if name:
+        _show_template(name, detail)
+    else:
+        _list_templates()
+
+
+def _show_template(name: str, detail: bool) -> None:
+    """Show compiled template configuration.
+
+    Args:
+        name: Template name to display.
+        detail: Whether to show expanded detail view.
+    """
+    ctx = get_context()
+    template_dir = ctx.config.template_dir
+
+    # Read raw template to get extends value before compilation
+    template_path = template_dir / f"{name}.json"
+    if not template_path.exists():
+        typer.echo(f"\nTemplate '{name}' not found")
+        typer.echo(f"  Searched in: {template_dir.resolve()}")
+        raise typer.Exit(1)
+
+    extends = None
+    try:
+        with open(template_path, "r") as f:
+            raw_data = json.load(f)
+            extends = raw_data.get("extends")
+    except Exception:
+        pass
+
+    # Load compiled template (with inheritance applied)
+    try:
+        compiled_template = load_template(name, template_dir)
+    except FileNotFoundError as e:
+        typer.echo(f"\nError loading template '{name}': {e}")
+        raise typer.Exit(1)
+    except ValueError as e:
+        typer.echo(f"\nError parsing template '{name}': {e}")
+        raise typer.Exit(1)
+
+    # Render the template
+    renderer = TemplateRenderer()
+    if detail:
+        renderer.render_detail(compiled_template, extends)
+    else:
+        renderer.render_table(compiled_template, extends)
+
+
+def _list_templates() -> None:
+    """List all available templates."""
     ctx = get_context()
     config = ctx.config
     template_dir = config.template_dir

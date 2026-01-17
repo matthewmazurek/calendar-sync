@@ -63,7 +63,7 @@ def export_command(
         ics_path = repository.export_ics(calendar_name, template=template)
         
         print(f"{typer.style('✓', fg=typer.colors.GREEN, bold=True)} Exported ICS")
-        print(f"  {ics_path}")
+        print(f"  {ics_path.resolve()}")
         
         if template:
             print(f"  Template: {template.name} (v{template.version})")
