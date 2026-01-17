@@ -6,6 +6,7 @@ from typing_extensions import Annotated
 from app.ingestion.summary import build_calendar_statistics
 from cli.context import get_context
 from cli.display.stats_renderer import StatsRenderer
+from cli.utils import require_calendar_with_data
 
 
 def stats(
@@ -30,17 +31,7 @@ def stats(
     repository = ctx.repository
     renderer = StatsRenderer()
 
-    # Check if calendar exists (has config.json)
-    if not repository.calendar_exists(name):
-        renderer.render_not_found(name)
-        raise typer.Exit(1)
-
-    # Check if calendar has data (has data.json)
-    calendar_with_metadata = repository.load_calendar(name)
-    if calendar_with_metadata is None:
-        renderer.render_no_data(name)
-        raise typer.Exit(1)
-
+    calendar_with_metadata = require_calendar_with_data(repository, name)
     calendar = calendar_with_metadata.calendar
 
     # Build statistics

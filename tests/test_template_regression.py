@@ -62,9 +62,9 @@ def test_end_to_end_template_vs_expected_ics():
     if not docx_path.exists() or not expected_ics_path.exists():
         pytest.skip("Fixture files not found")
 
-    # Load template (use medical_default since mazurek suppresses holidays)
+    # Load the 'default' template explicitly (not mazurek which suppresses holidays)
     config = CalendarConfig.from_env()
-    template = load_template(config.default_template, config.template_dir)
+    template = load_template("default", config.template_dir)
 
     # Read and process with template
     word_reader = WordReader()

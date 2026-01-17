@@ -84,7 +84,9 @@ class TableRenderer:
                 date_str = "-"
                 updated_str = "-"
 
-            table.add_row(id_display, name_display, date_str, updated_str, cal.config_path)
+            table.add_row(
+                id_display, name_display, date_str, updated_str, cal.config_path
+            )
 
         console.print(table)
 
@@ -142,7 +144,9 @@ class TableRenderer:
 
             if show_details:
                 size_str = format_file_size(ver.file_size) if ver.file_size else "-"
-                events_str = str(ver.event_count) if ver.event_count is not None else "-"
+                events_str = (
+                    str(ver.event_count) if ver.event_count is not None else "-"
+                )
                 path_str = (ver.file_path or "") + current_marker
 
                 table.add_row(

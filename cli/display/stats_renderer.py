@@ -118,22 +118,3 @@ class StatsRenderer:
             light = "░" * max(0, 14 - max(count, 10))
             bar = f"[cyan]{solid}{mid}[/cyan][dim]{light}[/dim]"
             console.print(f"  {week_key}: {bar} {count}")
-
-    def render_not_found(self, calendar_name: str) -> None:
-        """Render calendar not found message.
-
-        Args:
-            calendar_name: Name of the calendar that wasn't found.
-        """
-        console.print(f"\n[red]Calendar '{calendar_name}' not found[/red]")
-
-    def render_no_data(self, calendar_name: str) -> None:
-        """Render calendar has no data message.
-
-        Args:
-            calendar_name: Name of the calendar with no data.
-        """
-        console.print(
-            f"\n[yellow]Calendar '{calendar_name}' has no data.[/yellow]\n"
-            f"Run [cyan]calsync ingest {calendar_name} <source>[/cyan] to add events."
-        )

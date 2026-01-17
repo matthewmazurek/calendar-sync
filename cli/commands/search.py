@@ -8,6 +8,7 @@ from typing_extensions import Annotated
 from app.calendar_query import CalendarQuery
 from cli.context import get_context
 from cli.display import RichEventRenderer
+from cli.utils import require_calendar_with_data
 
 logger = logging.getLogger(__name__)
 
@@ -63,12 +64,7 @@ def search(
         logger.error("Please provide a search query, --type, or --location")
         raise typer.Exit(1)
 
-    # Load calendar
-    calendar_with_metadata = repository.load_calendar(name)
-    if calendar_with_metadata is None:
-        logger.error(f"Calendar '{name}' not found")
-        raise typer.Exit(1)
-
+    calendar_with_metadata = require_calendar_with_data(repository, name)
     calendar = calendar_with_metadata.calendar
     cal_query = CalendarQuery(calendar)
     renderer = RichEventRenderer()

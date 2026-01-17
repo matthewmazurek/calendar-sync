@@ -1,18 +1,14 @@
-"""CLI utilities for user interaction.
+"""CLI utilities for user interaction."""
 
-Display-related functions have been moved to cli.display module.
-This module now contains only user interaction utilities.
-"""
+from typing import TYPE_CHECKING
 
 import typer
 
-# Re-export display functions for backwards compatibility
-# These are deprecated - use cli.display directly instead
-from cli.display.formatters import format_file_size, format_relative_time
-from cli.display.summary_renderer import SummaryRenderer
+from cli.display.console import console
 
-# Create a default renderer instance for backwards compatibility
-_summary_renderer = SummaryRenderer()
+if TYPE_CHECKING:
+    from app.models.metadata import CalendarWithMetadata
+    from app.storage.calendar_repository import CalendarRepository
 
 
 def confirm_or_exit(prompt: str = "Continue?", force: bool = False) -> None:
@@ -29,59 +25,38 @@ def confirm_or_exit(prompt: str = "Continue?", force: bool = False) -> None:
             raise typer.Exit(0)
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Backwards compatibility wrappers (deprecated)
-# Use SummaryRenderer from cli.display instead
-# ─────────────────────────────────────────────────────────────────────────────
+def require_calendar_with_data(
+    repository: "CalendarRepository",
+    name: str,
+) -> "CalendarWithMetadata":
+    """Load a calendar, ensuring it exists and has data.
 
+    Checks that:
+    1. Calendar exists (has config.json)
+    2. Calendar has data (has data.json)
 
-def print_header(title: str, calendar_name: str) -> None:
-    """Print a styled header for a command.
+    Args:
+        repository: CalendarRepository instance
+        name: Calendar name
 
-    DEPRECATED: Use SummaryRenderer.render_header() instead.
+    Returns:
+        CalendarWithMetadata if found
+
+    Raises:
+        typer.Exit(1): If calendar doesn't exist or has no data
     """
-    _summary_renderer.render_header(title, calendar_name)
+    # Check if calendar exists (has config.json)
+    if not repository.calendar_exists(name):
+        console.print(f"\n[red]Calendar '{name}' not found[/red]")
+        raise typer.Exit(1)
 
+    # Check if calendar has data (has data.json)
+    calendar_with_metadata = repository.load_calendar(name)
+    if calendar_with_metadata is None:
+        console.print(
+            f"\n[yellow]Calendar '{name}' has no data.[/yellow]\n"
+            f"Run [cyan]calsync ingest {name} <source>[/cyan] to add events."
+        )
+        raise typer.Exit(1)
 
-def print_source_info(input_path, ingestion_summary, template) -> None:
-    """Print source file information.
-
-    DEPRECATED: Use SummaryRenderer.render_source_info() instead.
-    """
-    _summary_renderer.render_source_info(input_path, ingestion_summary, template)
-
-
-def print_processing_summary(processing_summary: dict) -> None:
-    """Format processing summary with arrow notation.
-
-    DEPRECATED: Use SummaryRenderer.render_processing_summary() instead.
-    """
-    _summary_renderer.render_processing_summary(processing_summary)
-
-
-def print_stats(ingestion_summary: dict) -> None:
-    """Format statistics in a compact single line.
-
-    DEPRECATED: Use SummaryRenderer.render_stats() instead.
-    """
-    _summary_renderer.render_stats(ingestion_summary)
-
-
-def print_success(message: str, path=None) -> None:
-    """Print a success message with optional file path.
-
-    DEPRECATED: Use SummaryRenderer.render_success() instead.
-    """
-    _summary_renderer.render_success(message, path)
-
-
-def format_processing_summary(
-    processing_summary: dict, ingestion_summary: dict | None = None
-) -> None:
-    """Format and display processing summary.
-
-    DEPRECATED: Use SummaryRenderer methods instead.
-    """
-    _summary_renderer.render_processing_summary(processing_summary)
-    if ingestion_summary:
-        _summary_renderer.render_stats(ingestion_summary)
+    return calendar_with_metadata
