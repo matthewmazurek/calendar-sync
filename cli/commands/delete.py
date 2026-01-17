@@ -9,7 +9,6 @@ from cli.context import get_context
 
 logger = logging.getLogger(__name__)
 
-
 def delete(
     name: Annotated[
         str,
@@ -83,3 +82,7 @@ def delete(
             f"\n{typer.style('✓', fg=typer.colors.GREEN, bold=True)} "
             f"Calendar '{name}' deleted (archived in git history)"
         )
+
+
+# Alias for Git-style naming
+rm = delete

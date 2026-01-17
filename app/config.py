@@ -20,7 +20,8 @@ class CalendarConfig(BaseModel):
     log_dir: Path = Field(default=Path("logs"))
 
     # File naming
-    canonical_filename: str = Field(default="calendar_data.json")
+    canonical_filename: str = Field(default="data.json")
+    settings_filename: str = Field(default="config.json")
     ics_export_filename: str = Field(default="calendar.ics")
     log_filename: str = Field(default="calendar_sync.log")
 

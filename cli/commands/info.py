@@ -99,7 +99,9 @@ def info(
             f"  {'Source revised:':<{label_width}} {_format_datetime(metadata.source_revised_at)}"
         )
     print(f"  {'Created:':<{label_width}} {_format_datetime(metadata.created)}")
-    print(f"  {'Last updated:':<{label_width}} {_format_datetime(metadata.last_updated)}")
+    print(
+        f"  {'Last updated:':<{label_width}} {_format_datetime(metadata.last_updated)}"
+    )
 
     # ─────────────────────────────────────────────────────────────────────────
     # Git information
@@ -114,12 +116,12 @@ def info(
         # Get latest commit info
         latest_commit_hash, latest_commit_date, latest_commit_message = versions[0]
 
-        # Get current version (what's in working directory)
-        calendar_path = repository.get_calendar_path(name)
+        # Get current version (what's in working directory) - use canonical path
+        canonical_path = repository._get_canonical_path(name)
         current_commit_hash = None
-        if calendar_path:
+        if canonical_path.exists():
             current_commit_hash = repository.git_service.get_current_commit_hash(
-                calendar_path
+                canonical_path
             )
 
         # Show current version
@@ -132,9 +134,7 @@ def info(
                     break
 
             if current_commit_date:
-                current_str = (
-                    f"{current_commit_hash[:7]} ({_format_datetime(current_commit_date, include_relative=False)})"
-                )
+                current_str = f"{current_commit_hash[:7]} ({_format_datetime(current_commit_date, include_relative=False)})"
             else:
                 current_str = current_commit_hash[:7]
         else:

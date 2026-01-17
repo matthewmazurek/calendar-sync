@@ -105,7 +105,14 @@ def test_calendar_repository_list_calendars(repository):
     calendars = repository.list_calendars()
     assert len(calendars) == 0
 
-    # Create a calendar
+    # Create a calendar (config.json defines a calendar)
+    repository.create_calendar("test_calendar")
+
+    # Should now have one calendar
+    calendars = repository.list_calendars()
+    assert "test_calendar" in calendars
+
+    # Add data to the calendar
     events = [Event(title="Test", date=datetime(2025, 1, 1).date())]
     calendar = Calendar(events=events)
     metadata = CalendarMetadata(
@@ -116,7 +123,7 @@ def test_calendar_repository_list_calendars(repository):
     writer = ICSWriter()
     repository.save_calendar(calendar, metadata, writer)
 
-    # Should now have one calendar
+    # Should still have one calendar
     calendars = repository.list_calendars()
     assert "test_calendar" in calendars
 
@@ -260,3 +267,135 @@ def test_calendar_repository_with_remote_url(temp_calendar_dir):
 
     # GitService should have remote URL
     assert repository.git_service.remote_url == "https://github.com/user/repo.git"
+
+
+def test_calendar_repository_create_calendar(repository):
+    """Test CalendarRepository create_calendar creates directory and config.json."""
+    # Create a new calendar with settings
+    settings_path = repository.create_calendar(
+        calendar_id="new_calendar",
+        name="New Calendar Display Name",
+        template="my_template",
+        description="Test calendar description",
+    )
+
+    # Settings file should exist
+    assert settings_path.exists()
+    assert settings_path.name == "config.json"
+
+    # Calendar directory should exist
+    calendar_dir = repository._get_calendar_dir("new_calendar")
+    assert calendar_dir.exists()
+
+    # Should be in list
+    calendars = repository.list_calendars()
+    assert "new_calendar" in calendars
+
+
+def test_calendar_repository_create_calendar_already_exists(repository):
+    """Test CalendarRepository create_calendar raises error if calendar exists."""
+    # Create first calendar
+    repository.create_calendar("existing_calendar")
+
+    # Try to create again
+    with pytest.raises(ValueError, match="already exists"):
+        repository.create_calendar("existing_calendar")
+
+
+def test_calendar_repository_load_save_settings(repository):
+    """Test CalendarRepository load_settings and save_settings."""
+    from app.models.settings import CalendarSettings
+
+    # Create calendar with settings
+    repository.create_calendar(
+        calendar_id="settings_test",
+        name="Settings Test Display Name",
+        template="test_template",
+        description="Test description",
+    )
+
+    # Load settings
+    settings = repository.load_settings("settings_test")
+    assert settings is not None
+    assert settings.name == "Settings Test Display Name"
+    assert settings.template == "test_template"
+    assert settings.description == "Test description"
+    assert settings.created is not None
+
+    # Update settings
+    settings.template = "updated_template"
+    repository.save_settings("settings_test", settings)
+
+    # Reload and verify
+    reloaded = repository.load_settings("settings_test")
+    assert reloaded.template == "updated_template"
+
+
+def test_calendar_repository_load_settings_nonexistent(repository):
+    """Test CalendarRepository load_settings returns None for nonexistent calendar."""
+    settings = repository.load_settings("nonexistent_calendar")
+    assert settings is None
+
+
+def test_calendar_repository_rename_calendar(repository):
+    """Test CalendarRepository rename_calendar."""
+    from app.exceptions import CalendarNotFoundError
+
+    # Create a calendar with config
+    repository.create_calendar("old_name")
+
+    # Add data to the calendar
+    events = [Event(title="Test", date=datetime(2025, 1, 1).date())]
+    calendar = Calendar(events=events)
+    metadata = CalendarMetadata(
+        name="old_name",
+        created=datetime.now(),
+        last_updated=datetime.now(),
+    )
+    writer = ICSWriter()
+    repository.save_calendar(calendar, metadata, writer)
+
+    # Rename it
+    repository.rename_calendar("old_name", "new_name")
+
+    # Old name should not exist
+    assert not repository.calendar_exists("old_name")
+
+    # New name should exist and have data
+    assert repository.calendar_exists("new_name")
+    loaded = repository.load_calendar("new_name")
+    assert loaded is not None
+    # metadata.name reflects ingestion context, not current calendar name
+    assert loaded.metadata.name == "old_name"
+    assert len(loaded.calendar.events) == 1
+
+
+def test_calendar_repository_rename_calendar_not_found(repository):
+    """Test CalendarRepository rename_calendar raises error if source doesn't exist."""
+    from app.exceptions import CalendarNotFoundError
+
+    with pytest.raises(CalendarNotFoundError):
+        repository.rename_calendar("nonexistent", "new_name")
+
+
+def test_calendar_repository_rename_calendar_target_exists(repository):
+    """Test CalendarRepository rename_calendar raises error if target exists."""
+    # Create two calendars
+    repository.create_calendar("source")
+    repository.create_calendar("target")
+
+    # Try to rename source to target
+    with pytest.raises(ValueError, match="already exists"):
+        repository.rename_calendar("source", "target")
+
+
+def test_calendar_repository_calendar_exists(repository):
+    """Test CalendarRepository calendar_exists method."""
+    # Initially should not exist
+    assert not repository.calendar_exists("test_calendar")
+
+    # Create calendar
+    repository.create_calendar("test_calendar")
+
+    # Now should exist
+    assert repository.calendar_exists("test_calendar")

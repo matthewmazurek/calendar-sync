@@ -1,5 +1,7 @@
 """List calendars or versions."""
 
+from pathlib import Path
+
 import typer
 from typing_extensions import Annotated
 
@@ -51,7 +53,9 @@ def ls(
         _list_versions(repository, config, renderer, name, show_all, show_info, limit)
 
 
-def _list_calendars(repository, config, renderer: TableRenderer, include_archived: bool) -> None:
+def _list_calendars(
+    repository, config, renderer: TableRenderer, include_archived: bool
+) -> None:
     """List all calendars."""
     calendars = repository.list_calendars(include_deleted=include_archived)
     if not calendars:
@@ -68,30 +72,37 @@ def _list_calendars(repository, config, renderer: TableRenderer, include_archive
 
     # Collect calendar info
     calendar_info = []
-    for cal_name in calendars:
-        calendar_dir = repository._get_calendar_dir(cal_name)
-        archived = not calendar_dir.exists()
+    for cal_id in calendars:
+        cal_dir = repository._get_calendar_dir(cal_id)
+        archived = not cal_dir.exists()
 
-        # Get calendar file path (check both formats)
-        cal_path = None
-        for fmt in ["ics", "json"]:
-            path = repository.get_calendar_path(cal_name, format=fmt)
-            if path and path.exists():
-                cal_path = path
-                break
+        # Get config file path (relative to cwd for terminal links)
+        config_path = repository._get_settings_path(cal_id)
+        if config_path.exists():
+            try:
+                config_display = str(config_path.resolve().relative_to(Path.cwd()))
+            except ValueError:
+                config_display = str(config_path.resolve())
+        else:
+            config_display = "-"
 
         # Get last updated from metadata
         last_updated = None
-        metadata = repository.load_metadata(cal_name)
+        metadata = repository.load_metadata(cal_id)
         if metadata:
             last_updated = metadata.last_updated
 
+        # Get display name from settings
+        settings = repository.load_settings(cal_id)
+        display_name = settings.name if settings else None
+
         calendar_info.append(
             CalendarInfo(
-                name=cal_name,
+                id=cal_id,
                 archived=archived,
-                path=str(cal_path.resolve()) if cal_path else "-",
+                config_path=config_display,
                 last_updated=last_updated,
+                name=display_name,
             )
         )
 
@@ -127,26 +138,22 @@ def _list_versions(
     else:
         versions_data = all_versions
 
-    # Determine calendar file path (check both formats)
+    # Determine calendar file path for display (ICS is what users subscribe to)
     git_service = repository.git_service
     repo_root = git_service.repo_root
-    calendar_path = None
-    for fmt in ["ics", "json"]:
-        path = repository.get_calendar_path(name, format=fmt)
-        if path and path.exists():
-            calendar_path = path
-            break
-
-    # If no existing file found, default to ics format for path display
+    calendar_path = repository.get_calendar_path(name, format="ics")
     if calendar_path is None:
-        calendar_path = repository._get_calendar_file_path(name, format="ics")
+        calendar_path = repository._get_ics_export_path(name)
 
-    # Find which commit the current file matches
+    # Get canonical path for version tracking (data.json is the source of truth)
+    canonical_path = repository._get_canonical_path(name)
+
+    # Find which commit the current canonical file matches
     current_commit_hash = None
     try:
-        if calendar_path and calendar_path.exists():
+        if canonical_path.exists():
             current_commit_hash = repository.git_service.get_current_commit_hash(
-                calendar_path
+                canonical_path
             )
     except Exception:
         pass

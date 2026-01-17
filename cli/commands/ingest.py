@@ -66,13 +66,25 @@ def ingest_command(
     renderer = SummaryRenderer()
 
     # ─────────────────────────────────────────────────────────────────────────
-    # Load template
+    # Load template (fallback: CLI arg → calendar config → global config)
     # ─────────────────────────────────────────────────────────────────────────
-    effective_template_name = template_name or config.default_template
+    calendar_settings = repository.load_settings(calendar_name)
+    calendar_template = calendar_settings.template if calendar_settings else None
+    effective_template_name = template_name or calendar_template or config.default_template
     template = get_template(effective_template_name, config.template_dir)
     logger.info(f"Using template: {template.name} (version {template.version})")
     if template.extends:
         logger.info(f"Template extends: {template.extends}")
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # Auto-create calendar if it doesn't exist
+    # ─────────────────────────────────────────────────────────────────────────
+    if not repository.calendar_exists(calendar_name):
+        logger.info(f"Creating new calendar: {calendar_name}")
+        repository.create_calendar(
+            calendar_id=calendar_name,
+            template=effective_template_name,
+        )
 
     # ─────────────────────────────────────────────────────────────────────────
     # Ingest source file

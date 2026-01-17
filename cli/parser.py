@@ -56,13 +56,15 @@ def main_callback(
 
 from cli.commands.commit import commit
 from cli.commands.config import config
-from cli.commands.delete import delete
+from cli.commands.delete import delete, rm
 from cli.commands.diff import diff
 from cli.commands.export import export
 from cli.commands.git_setup import git_setup
 from cli.commands.info import info
 from cli.commands.ingest import ingest
 from cli.commands.ls import ls
+from cli.commands.mv import mv
+from cli.commands.new import new
 from cli.commands.push import push
 from cli.commands.restore import restore
 from cli.commands.search import search
@@ -83,6 +85,9 @@ app.command(name="search")(search)
 app.command(name="restore")(restore)
 app.command(name="info")(info)
 app.command(name="stats")(stats)
+app.command(name="new")(new)
+app.command(name="mv")(mv)
+app.command(name="rm")(rm)
 app.command(name="delete")(delete)
 app.command(name="diff")(diff)
 app.command(name="push")(push)

@@ -19,7 +19,7 @@ class GitService:
         repo_root: Path,
         remote_url: str | None = None,
         git_client: GitClient | None = None,
-        canonical_filename: str = "calendar_data.json",
+        canonical_filename: str = "data.json",
         ics_export_filename: str = "calendar.ics",
         default_remote: str = "origin",
         default_branch: str = "main",
@@ -426,6 +426,50 @@ class GitService:
         except (GitError, GitCommandError) as e:
             logger.warning(f"Failed to commit deletion: {e}")
 
+    def commit_rename(self, old_name: str, new_name: str) -> None:
+        """
+        Commit calendar rename to git.
+
+        Stages the deletion of old files and addition of new files,
+        then commits. Git will recognize this as a rename if content is similar.
+
+        Args:
+            old_name: Old calendar name
+            new_name: New calendar name
+        """
+        if not self._is_git_repo():
+            logger.debug("Not in a git repository, skipping rename commit")
+            return
+
+        try:
+            repo_root = self._get_repo_root()
+            if not repo_root:
+                logger.warning("Could not determine git repo root")
+                return
+
+            old_dir = self.repo_root / old_name
+            new_dir = self.repo_root / new_name
+
+            # Stage deletion of old calendar directory
+            self.git_client.run_command(
+                ["git", "rm", "-r", "--ignore-unmatch", str(old_dir)],
+                repo_root,
+            )
+
+            # Stage addition of new calendar directory
+            if new_dir.exists():
+                rel_new_dir = new_dir.relative_to(repo_root)
+                self.git_client.run_command(
+                    ["git", "add", str(rel_new_dir)],
+                    repo_root,
+                )
+
+            # Commit the rename
+            commit_message = f"Rename calendar: {old_name} → {new_name}"
+            self._commit_changes(commit_message)
+        except (GitError, GitCommandError) as e:
+            logger.warning(f"Failed to commit rename: {e}")
+
     def purge_from_history(self, calendar_name: str) -> bool:
         """
         Remove calendar from git history entirely (hard delete).
@@ -533,12 +577,12 @@ class GitService:
 
     def _stage_calendar_files(self, calendar_name: str) -> None:
         """
-        Stage specific calendar files for commit.
+        Stage all calendar files for commit.
 
-        Stages whatever files exist in the calendar directory:
-        - calendar_data.json (canonical source)
-        - calendar.ics (export for subscriptions)
-        - metadata.json (legacy, if present)
+        Stages the entire calendar directory, which handles:
+        - New files (data.json, config.json)
+        - Modified files (calendar.ics)
+        - Deleted files (old filenames)
 
         Args:
             calendar_name: Name of the calendar to stage
@@ -549,22 +593,15 @@ class GitService:
             raise GitRepositoryNotFoundError("Could not determine git repo root")
         repo_root = repo_root.resolve()
 
-        # Files to stage (in order of priority)
-        files_to_stage = [
-            calendar_dir / self.canonical_filename,  # calendar_data.json
-            calendar_dir / self.ics_export_filename,  # calendar.ics
-        ]
-
-        for file_path in files_to_stage:
-            if file_path.exists():
-                rel_path = file_path.relative_to(repo_root)
-                result = self.git_client.run_command(
-                    ["git", "add", str(rel_path)], repo_root
-                )
-                if result.returncode != 0:
-                    raise GitCommandError(
-                        f"Failed to stage {file_path.name}: {result.stderr}"
-                    )
+        # Stage entire calendar directory (handles adds, modifications, and deletions)
+        rel_dir = calendar_dir.relative_to(repo_root)
+        result = self.git_client.run_command(
+            ["git", "add", "-A", str(rel_dir)], repo_root
+        )
+        if result.returncode != 0:
+            raise GitCommandError(
+                f"Failed to stage calendar directory: {result.stderr}"
+            )
 
     def _commit_changes(self, message: str) -> None:
         """Commit staged changes."""

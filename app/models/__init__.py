@@ -3,6 +3,7 @@
 from app.models.calendar import Calendar
 from app.models.event import Event, EventType, EventTypeDetector
 from app.models.metadata import CalendarMetadata, CalendarWithMetadata
+from app.models.settings import CalendarSettings
 
 __all__ = [
     "Event",
@@ -11,4 +12,5 @@ __all__ = [
     "Calendar",
     "CalendarMetadata",
     "CalendarWithMetadata",
+    "CalendarSettings",
 ]

@@ -1,5 +1,6 @@
 """Calendar repository for managing named calendars."""
 
+import shutil
 from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -8,6 +9,7 @@ from app.exceptions import CalendarNotFoundError
 from app.ingestion.base import ReaderRegistry
 from app.models.calendar import Calendar
 from app.models.metadata import CalendarMetadata, CalendarWithMetadata
+from app.models.settings import CalendarSettings
 from app.output.ics_writer import ICSWriter
 from app.storage.calendar_storage import CalendarStorage
 from app.storage.git_service import GitService
@@ -25,7 +27,8 @@ class CalendarRepository:
         storage: CalendarStorage,
         git_service: GitService,
         reader_registry: ReaderRegistry,
-        canonical_filename: str = "calendar_data.json",
+        canonical_filename: str = "data.json",
+        settings_filename: str = "config.json",
         ics_export_filename: str = "calendar.ics",
     ):
         """
@@ -37,6 +40,7 @@ class CalendarRepository:
             git_service: GitService instance (dependency injection)
             reader_registry: ReaderRegistry instance (for ingesting source files)
             canonical_filename: Filename for canonical JSON storage
+            settings_filename: Filename for calendar settings
             ics_export_filename: Filename for ICS export
         """
         self.calendar_dir = calendar_dir
@@ -44,6 +48,7 @@ class CalendarRepository:
         self.git_service = git_service
         self.reader_registry = reader_registry
         self.canonical_filename = canonical_filename
+        self.settings_filename = settings_filename
         self.ics_export_filename = ics_export_filename
 
     def _get_calendar_dir(self, name: str) -> Path:
@@ -57,6 +62,10 @@ class CalendarRepository:
     def _get_ics_export_path(self, name: str) -> Path:
         """Get path to ICS export file."""
         return self._get_calendar_dir(name) / self.ics_export_filename
+
+    def _get_settings_path(self, name: str) -> Path:
+        """Get path to calendar settings file."""
+        return self._get_calendar_dir(name) / self.settings_filename
 
     def _get_calendar_file_path(self, name: str, format: str = "ics") -> Path:
         """Get path to calendar file (for backwards compatibility)."""
@@ -222,9 +231,115 @@ class CalendarRepository:
         except (OSError, ValueError):
             return None
 
+    def load_settings(self, name: str) -> CalendarSettings | None:
+        """Load calendar settings from config.json.
+
+        Args:
+            name: Calendar name
+
+        Returns:
+            CalendarSettings or None if not found
+        """
+        settings_path = self._get_settings_path(name)
+        if not settings_path.exists():
+            return None
+
+        try:
+            return CalendarSettings.model_validate_json(settings_path.read_text())
+        except (OSError, ValueError):
+            return None
+
+    def save_settings(self, name: str, settings: CalendarSettings) -> Path:
+        """Save calendar settings to config.json.
+
+        Args:
+            name: Calendar name
+            settings: CalendarSettings to save
+
+        Returns:
+            Path to settings file
+        """
+        calendar_dir = self._get_calendar_dir(name)
+        calendar_dir.mkdir(parents=True, exist_ok=True)
+
+        settings_path = self._get_settings_path(name)
+        settings_path.write_text(settings.model_dump_json(indent=2, exclude_none=True))
+
+        return settings_path
+
+    def create_calendar(
+        self,
+        calendar_id: str,
+        name: str | None = None,
+        template: str | None = None,
+        description: str | None = None,
+    ) -> Path:
+        """Create a new calendar with settings (no data required).
+
+        A calendar is defined by its config.json file. This method creates
+        the config.json file for a calendar. The directory may already exist
+        (e.g., if data was ingested before), but config.json must not exist.
+
+        Args:
+            calendar_id: Calendar ID (directory name)
+            name: Optional display name (falls back to calendar_id if not set)
+            template: Default template for this calendar
+            description: Human-readable description
+
+        Returns:
+            Path to created settings file
+
+        Raises:
+            ValueError: If calendar already exists (config.json exists)
+        """
+        settings_path = self._get_settings_path(calendar_id)
+        if settings_path.exists():
+            raise ValueError(f"Calendar '{calendar_id}' already exists")
+
+        settings = CalendarSettings(
+            name=name,
+            template=template,
+            description=description,
+            created=datetime.now(),
+        )
+
+        return self.save_settings(calendar_id, settings)
+
+    def rename_calendar(self, old_name: str, new_name: str) -> None:
+        """Rename a calendar.
+
+        Renames the calendar directory. The data.json metadata is not updated
+        as it reflects the ingestion context (what the calendar was called when
+        that data was ingested). The next ingestion will use the new name.
+
+        Args:
+            old_name: Current calendar name
+            new_name: New calendar name
+
+        Raises:
+            CalendarNotFoundError: If source calendar doesn't exist (no config.json)
+            ValueError: If target calendar already exists
+        """
+        old_dir = self._get_calendar_dir(old_name)
+        new_dir = self._get_calendar_dir(new_name)
+
+        if not self.calendar_exists(old_name):
+            raise CalendarNotFoundError(f"Calendar '{old_name}' not found")
+        if self.calendar_exists(new_name):
+            raise ValueError(f"Calendar '{new_name}' already exists")
+
+        # Rename directory only — data.json metadata is ingestion context
+        shutil.move(str(old_dir), str(new_dir))
+
+    def calendar_exists(self, name: str) -> bool:
+        """Check if a calendar exists (has config.json)."""
+        return self._get_settings_path(name).exists()
+
     def list_calendars(self, include_deleted: bool = False) -> list[str]:
         """
         List all available calendar names.
+
+        A calendar is defined by having a config.json file in its directory.
 
         Args:
             include_deleted: If True, also include calendars that exist in git history
@@ -235,11 +350,13 @@ class CalendarRepository:
         """
         calendars = set()
 
-        # Get calendars from filesystem (existing directories)
+        # Get calendars from filesystem (directories with config.json)
         if self.calendar_dir.exists():
             for d in self.calendar_dir.iterdir():
                 if d.is_dir() and not d.name.startswith("."):
-                    calendars.add(d.name)
+                    # Only include if config.json exists
+                    if (d / self.settings_filename).exists():
+                        calendars.add(d.name)
 
         # If including deleted, check git history for calendar files
         if include_deleted:
@@ -297,8 +414,6 @@ class CalendarRepository:
         """Delete calendar directory and all contents."""
         calendar_dir = self._get_calendar_dir(name)
         if calendar_dir.exists():
-            import shutil
-
             shutil.rmtree(calendar_dir)
 
     def get_calendar_path(self, name: str, format: str = "ics") -> Path | None:
@@ -317,7 +432,7 @@ class CalendarRepository:
         """
         Get path to canonical JSON storage file.
 
-        Returns path to calendar_data.json file or None if not exists.
+        Returns path to data.json file or None if not exists.
         """
         canonical_path = self._get_canonical_path(name)
         if canonical_path.exists():

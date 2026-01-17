@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 
 
 def sync_command(
-    calendar_name: Annotated[
+    calendar_id: Annotated[
         str,
         typer.Argument(help="Calendar name to create or update"),
     ],
@@ -63,13 +63,27 @@ def sync_command(
     renderer = SummaryRenderer()
 
     # ─────────────────────────────────────────────────────────────────────────
-    # Load template
+    # Load template (fallback: CLI arg → calendar config → global config)
     # ─────────────────────────────────────────────────────────────────────────
-    effective_template_name = template_name or config.default_template
+    calendar_settings = repository.load_settings(calendar_id)
+    calendar_template = calendar_settings.template if calendar_settings else None
+    effective_template_name = (
+        template_name or calendar_template or config.default_template
+    )
     template = get_template(effective_template_name, config.template_dir)
     logger.info(f"Using template: {template.name} (version {template.version})")
     if template.extends:
         logger.info(f"Template extends: {template.extends}")
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # Auto-create calendar if it doesn't exist
+    # ─────────────────────────────────────────────────────────────────────────
+    if not repository.calendar_exists(calendar_id):
+        logger.info(f"Creating new calendar: {calendar_id}")
+        repository.create_calendar(
+            calendar_id=calendar_id,
+            template=effective_template_name,
+        )
 
     # ─────────────────────────────────────────────────────────────────────────
     # Ingest source file
@@ -93,7 +107,7 @@ def sync_command(
         sys.exit(1)
 
     # Check if calendar exists
-    existing = repository.load_calendar(calendar_name)
+    existing = repository.load_calendar(calendar_id)
     existing_calendar = existing.calendar if existing else None
     is_new = existing is None
 
@@ -108,7 +122,7 @@ def sync_command(
     # Output: Header
     # ─────────────────────────────────────────────────────────────────────────
     action = "Creating" if ingestion_ctx.is_new else "Updating"
-    renderer.render_header(action, calendar_name)
+    renderer.render_header(action, calendar_id)
 
     # ─────────────────────────────────────────────────────────────────────────
     # Output: Source info
@@ -126,7 +140,7 @@ def sync_command(
 
     try:
         processing_result = manager.create_or_update(
-            calendar_name,
+            calendar_id,
             ingestion_ctx.ingestion_result.calendar,
             ingestion_ctx.is_new,
             template,
@@ -175,7 +189,9 @@ def sync_command(
     if ingestion_ctx.is_new:
         renderer.render_success("Calendar created", filepath)
     else:
-        renderer.render_success(f"Calendar updated (year {processing_result.year})", filepath)
+        renderer.render_success(
+            f"Calendar updated (year {processing_result.year})", filepath
+        )
 
     logger.info(f"Calendar saved: {filepath}")
 
@@ -183,7 +199,7 @@ def sync_command(
     # Publish to git (optional)
     # ─────────────────────────────────────────────────────────────────────────
     if push:
-        git_service.publish_calendar(calendar_name, filepath)
+        git_service.publish_calendar(calendar_id, filepath)
         renderer.render_success("Pushed to git")
 
 

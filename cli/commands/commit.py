@@ -26,8 +26,8 @@ def commit_command(
     """
     Commit calendar files to git.
     
-    This is a pure git operation that stages and commits whatever files
-    exist in the calendar directory (calendar_data.json, calendar.ics, etc.)
+    This is a pure git operation that stages and commits all files
+    in the calendar directory (data.json, calendar.ics, config.json, etc.)
     without generating or modifying any files.
     
     The commit is local only. Use 'push' to push to remote.

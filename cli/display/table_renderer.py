@@ -14,10 +14,11 @@ from cli.display.formatters import format_file_size, format_relative_time
 class CalendarInfo:
     """Information about a calendar for display."""
 
-    name: str
+    id: str  # Directory name (calendar ID)
     archived: bool
-    path: str
+    config_path: str  # Full path to config.json
     last_updated: datetime | None
+    name: str | None = None  # Display name (falls back to id if not set)
 
 
 @dataclass
@@ -62,15 +63,19 @@ class TableRenderer:
         console.print()
 
         table = Table(show_header=True, header_style="bold", box=None, padding=(0, 2))
-        table.add_column("NAME", style="cyan")
+        table.add_column("ID", style="cyan")
+        table.add_column("NAME", style="white")
         table.add_column("DATE", style="dim")
         table.add_column("UPDATED", style="dim")
-        table.add_column("PATH", style="dim")
+        table.add_column("CONFIG", no_wrap=True)
 
         for cal in calendars:
-            name_display = cal.name
+            id_display = cal.id
             if cal.archived:
-                name_display += " [dim](archived)[/dim]"
+                id_display += " [dim](archived)[/dim]"
+
+            # Display name (fallback to id if not set)
+            name_display = cal.name or "-"
 
             if cal.last_updated:
                 date_str = cal.last_updated.strftime("%Y-%m-%d")
@@ -79,7 +84,7 @@ class TableRenderer:
                 date_str = "-"
                 updated_str = "-"
 
-            table.add_row(name_display, date_str, updated_str, cal.path)
+            table.add_row(id_display, name_display, date_str, updated_str, cal.config_path)
 
         console.print(table)
 
