@@ -57,10 +57,6 @@ def config() -> None:
         else:
             return "default"
     
-    # Default format
-    source_format = get_source("CALENDAR_FORMAT", config_obj.default_format, default_config.default_format)
-    typer.echo(f"{'default_format:':<{label_width}} {config_obj.default_format} ({source_format})")
-    
     # Calendar directory
     source_dir = get_source("CALENDAR_DIR", str(config_obj.calendar_dir), str(default_config.calendar_dir))
     typer.echo(f"{'calendar_dir:':<{label_width}} {config_obj.calendar_dir} ({source_dir})")

@@ -3,6 +3,7 @@
 from app.ingestion.base import CalendarReader, ReaderRegistry
 from app.ingestion.ics_reader import ICSReader
 from app.ingestion.json_reader import JSONReader
+from app.ingestion.service import IngestionService
 from app.ingestion.word_reader import WordReader
 
 __all__ = [
@@ -11,4 +12,5 @@ __all__ = [
     "WordReader",
     "ICSReader",
     "JSONReader",
+    "IngestionService",
 ]

@@ -1,0 +1,79 @@
+{
+    "name": "default",
+    "version": "1.1",
+    "settings": {
+        "time_format": "12h"
+    },
+    "locations": {
+        "work": {},
+        "office": {},
+        "home": {}
+    },
+    "defaults": {
+        "location": null,
+        "consolidate": {
+            "group_by": "title",
+            "pattern_aware": false,
+            "only_all_day": true,
+            "require_same_times": false
+        },
+        "overnight": "split",
+        "time_periods": {
+            "AM": [
+                "0800",
+                "1200"
+            ],
+            "PM": [
+                "1230",
+                "1630"
+            ]
+        }
+    },
+    "types": {
+        "holiday": {
+            "match": [
+                "New Year",
+                "Family Day",
+                "Good Friday",
+                "Victoria Day",
+                "Canada Day",
+                "Civic Holiday",
+                "Labour Day",
+                "Labor Day",
+                "Truth and Reconciliation",
+                "Thanksgiving",
+                "Remembrance",
+                "Christmas",
+                "Boxing",
+                "Lieu Stat",
+                "Hanukkah",
+                "Lunar New Year",
+                "Ramadan",
+                "Mardi Gras",
+                "Ash Wednesday",
+                "Holi",
+                "Purim",
+                "Eid",
+                "Passover",
+                "Shavuot",
+                "Tish B-Av",
+                "Mawlid",
+                "Rosh Hashana",
+                "Yom Kippur",
+                "Sukkot",
+                "Hoshana Rabbah",
+                "Shemini Atzeret",
+                "Simchat Torah",
+                "Diwali",
+                "Kwanzaa",
+                "Muharram",
+                "Ashura",
+                "Indigenous Day",
+                "Arbor Day",
+                "Daylight Saving"
+            ],
+            "suppress": false,
+            "busy": false
+        }
+    }
+}

@@ -12,7 +12,6 @@ from app.config import CalendarConfig
 def test_calendar_config_defaults():
     """Test CalendarConfig default values."""
     config = CalendarConfig()
-    assert config.default_format == "ics"
     assert config.calendar_dir == Path("data/calendars")
     assert config.ls_default_limit == 5
     assert config.calendar_git_remote_url is None
@@ -27,13 +26,11 @@ def test_calendar_config_from_env_calendar_git_remote_url(monkeypatch):
 
 def test_calendar_config_from_env_all_vars(monkeypatch):
     """Test loading all config values from environment."""
-    monkeypatch.setenv("CALENDAR_FORMAT", "json")
     monkeypatch.setenv("CALENDAR_DIR", "/custom/path/calendars")
     monkeypatch.setenv("LS_DEFAULT_LIMIT", "10")
     monkeypatch.setenv("CALENDAR_GIT_REMOTE_URL", "https://github.com/user/repo.git")
 
     config = CalendarConfig.from_env()
-    assert config.default_format == "json"
     assert config.calendar_dir == Path("/custom/path/calendars")
     assert config.ls_default_limit == 10
     assert config.calendar_git_remote_url == "https://github.com/user/repo.git"
@@ -44,7 +41,6 @@ def test_calendar_config_from_env_file(tmp_path, monkeypatch):
     env_file = tmp_path / ".env"
     env_file.write_text(
         "CALENDAR_GIT_REMOTE_URL=https://github.com/user/repo.git\n"
-        "CALENDAR_FORMAT=json\n"
     )
 
     # Change to tmp_path so .env file is found

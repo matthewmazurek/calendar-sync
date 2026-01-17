@@ -24,13 +24,16 @@ on run {input, parameters}
                 end tell
 
                 -- Run your Python script with the sync command
+                -- CLI signature: calendar-sync sync CALENDAR_NAME CALENDAR_DATA_FILE [OPTIONS]
                 set projectDir to "/Users/matthewmazurek/projects/calendar-sync"
                 set docxArg to quoted form of outPOSIX
                 set calendarName to "mazurek"
-                -- Optional: add --publish flag if you want to auto-publish to git
-                set publishFlag to " --publish"
-                -- set publishFlag to ""
-                set cmd to "cd " & quoted form of projectDir & " && poetry run calendar-sync sync " & docxArg & " " & calendarName & publishFlag
+                -- --force skips confirmation prompt (required for automation)
+                set forceFlag to " --force"
+                -- Optional: add --push flag if you want to auto-push to git
+                set pushFlag to " --push"
+                -- set pushFlag to ""
+                set cmd to "cd " & quoted form of projectDir & " && poetry run calendar-sync sync " & calendarName & " " & docxArg & forceFlag & pushFlag
 
                 tell application "Terminal"
                     activate

@@ -1,7 +1,6 @@
 """Compare calendar versions."""
 
 import logging
-from datetime import timezone
 from typing import Any
 
 import typer
@@ -9,6 +8,7 @@ from typing_extensions import Annotated
 
 from app.models.calendar import Calendar
 from cli.context import get_context
+from cli.display.diff_renderer import DiffRenderer
 
 logger = logging.getLogger(__name__)
 
@@ -17,8 +17,7 @@ def _resolve_version(
     commit: str,
     versions: list[tuple[str, Any, str]],
 ) -> tuple[str | None, str]:
-    """
-    Resolve a version specifier to a commit hash.
+    """Resolve a version specifier to a commit hash.
 
     Args:
         commit: Version specifier (#N, N, latest, previous, HEAD, working, or commit hash)
@@ -81,8 +80,7 @@ def _resolve_version(
 def _get_calendar_at_version(
     repository, name: str, commit: str | None, format: str = "ics"
 ) -> Calendar | None:
-    """
-    Load calendar at a specific version.
+    """Load calendar at a specific version.
 
     Args:
         repository: CalendarRepository instance
@@ -103,23 +101,11 @@ def _get_calendar_at_version(
         return result.calendar if result else None
 
 
-def _format_event_summary(event) -> str:
-    """Format an event for display."""
-    date_str = event.date.strftime("%Y-%m-%d")
-    time_str = ""
-    if event.start:
-        time_str = f" {event.start.strftime('%H:%M')}"
-        if event.end:
-            time_str += f"-{event.end.strftime('%H:%M')}"
-    return f"{date_str}{time_str}: {event.title}"
-
-
 def _compute_diff(
     old_calendar: Calendar | None,
     new_calendar: Calendar | None,
 ) -> tuple[list, list, list]:
-    """
-    Compute differences between two calendars.
+    """Compute differences between two calendars.
 
     Returns:
         Tuple of (added_events, removed_events, modified_events)
@@ -170,7 +156,10 @@ def _compute_diff(
     for event in new_events:
         key = event_key(event)
         if key in old_by_key:
-            # Exact match - no change
+            old_event = old_by_key[key]
+            # Check if they actually differ (e.g., type changed)
+            if _events_differ(old_event, event):
+                modified.append((old_event, event))
             processed_old.add(key)
             processed_new.add(key)
 
@@ -214,17 +203,9 @@ def _compute_diff(
 
 def _events_differ(old, new) -> bool:
     """Check if two events differ in meaningful ways."""
-    if old.title != new.title:
-        return True
-    if old.date != new.date:
-        return True
-    if old.start != new.start:
-        return True
-    if old.end != new.end:
-        return True
-    if old.location != new.location:
-        return True
-    return False
+    # Exclude computed fields from comparison
+    exclude = {"is_all_day", "is_overnight"}
+    return old.model_dump(exclude=exclude) != new.model_dump(exclude=exclude)
 
 
 def diff(
@@ -253,8 +234,7 @@ def diff(
         typer.Option("--stats", "-s", help="Show statistics summary"),
     ] = False,
 ) -> None:
-    """
-    Compare two versions of a calendar.
+    """Compare two versions of a calendar.
 
     By default, compares the previous committed version with the current working directory.
 
@@ -273,6 +253,7 @@ def diff(
     """
     ctx = get_context()
     repository = ctx.repository
+    renderer = DiffRenderer()
 
     # Get version history
     versions = repository.list_calendar_versions(name)
@@ -296,7 +277,7 @@ def diff(
 
     # Warn if comparing same version
     if commit1 == commit2:
-        typer.echo(f"Comparing {display1} with itself - no differences.")
+        renderer.render_same_version(display1)
         raise typer.Exit(0)
 
     # Load calendars at each version
@@ -310,94 +291,22 @@ def diff(
     # Compute differences
     added, removed, modified = _compute_diff(cal1, cal2)
 
-    # Header
-    typer.echo(f"Comparing calendar '{name}':")
-    typer.echo(f"  {display1} → {display2}")
-    typer.echo()
+    # Render comparison
+    renderer.render_comparison_header(name, display1, display2)
 
-    # Show counts
-    total_changes = len(added) + len(removed) + len(modified)
-    if total_changes == 0:
-        typer.echo("No differences found.")
+    if len(added) + len(removed) + len(modified) == 0:
+        renderer.render_no_differences()
         raise typer.Exit(0)
 
-    # Stats mode or compact mode
-    if compact or stats:
-        typer.echo(f"  Added:    {len(added):>4} event(s)")
-        typer.echo(f"  Removed:  {len(removed):>4} event(s)")
-        typer.echo(f"  Modified: {len(modified):>4} event(s)")
-        typer.echo(f"  ─────────────────")
-        typer.echo(f"  Total:    {total_changes:>4} change(s)")
-
-        if compact:
-            raise typer.Exit(0)
-
-        typer.echo()
-
-    # Detailed output
-    if added:
-        typer.echo(typer.style("Added events:", fg=typer.colors.GREEN, bold=True))
-        for event in sorted(added, key=lambda e: (e.date, e.start or e.date)):
-            typer.echo(
-                typer.style(
-                    f"  + {_format_event_summary(event)}", fg=typer.colors.GREEN
-                )
-            )
-        typer.echo()
-
-    if removed:
-        typer.echo(typer.style("Removed events:", fg=typer.colors.RED, bold=True))
-        for event in sorted(removed, key=lambda e: (e.date, e.start or e.date)):
-            typer.echo(
-                typer.style(f"  - {_format_event_summary(event)}", fg=typer.colors.RED)
-            )
-        typer.echo()
-
-    if modified:
-        typer.echo(typer.style("Modified events:", fg=typer.colors.YELLOW, bold=True))
-        for old_event, new_event in sorted(
-            modified, key=lambda x: (x[1].date, x[1].start or x[1].date)
-        ):
-            typer.echo(
-                typer.style(
-                    f"  ~ {_format_event_summary(new_event)}", fg=typer.colors.YELLOW
-                )
-            )
-            # Show what changed
-            if old_event.title != new_event.title:
-                typer.echo(f"      title: {old_event.title} → {new_event.title}")
-            if old_event.date != new_event.date:
-                typer.echo(f"      date: {old_event.date} → {new_event.date}")
-            if old_event.start != new_event.start:
-                old_time = (
-                    old_event.start.strftime("%H:%M") if old_event.start else "none"
-                )
-                new_time = (
-                    new_event.start.strftime("%H:%M") if new_event.start else "none"
-                )
-                typer.echo(f"      start: {old_time} → {new_time}")
-            if old_event.end != new_event.end:
-                old_time = old_event.end.strftime("%H:%M") if old_event.end else "none"
-                new_time = new_event.end.strftime("%H:%M") if new_event.end else "none"
-                typer.echo(f"      end: {old_time} → {new_time}")
-            if old_event.location != new_event.location:
-                typer.echo(
-                    f"      location: {old_event.location or 'none'} → {new_event.location or 'none'}"
-                )
-        typer.echo()
-
-    # Summary line
-    if not stats:
-        summary_parts = []
-        if added:
-            summary_parts.append(typer.style(f"+{len(added)}", fg=typer.colors.GREEN))
-        if removed:
-            summary_parts.append(typer.style(f"-{len(removed)}", fg=typer.colors.RED))
-        if modified:
-            summary_parts.append(
-                typer.style(f"~{len(modified)}", fg=typer.colors.YELLOW)
-            )
-        typer.echo(f"Summary: {', '.join(summary_parts)}")
+    renderer.render_diff(
+        added,
+        removed,
+        modified,
+        old_label=display1,
+        new_label=display2,
+        compact=compact,
+        show_stats=stats,
+    )
 
 
 def display_diff(
@@ -407,8 +316,7 @@ def display_diff(
     new_label: str = "after",
     compact: bool = False,
 ) -> bool:
-    """
-    Display differences between two calendars.
+    """Display differences between two calendars.
 
     Args:
         old_calendar: Calendar before changes (or None)
@@ -420,88 +328,13 @@ def display_diff(
     Returns:
         True if there were differences, False otherwise
     """
-    # Compute differences
     added, removed, modified = _compute_diff(old_calendar, new_calendar)
-
-    # Check if there are changes
-    total_changes = len(added) + len(removed) + len(modified)
-    if total_changes == 0:
-        typer.echo("No differences.")
-        return False
-
-    # Header
-    typer.echo(f"\nChanges ({old_label} → {new_label}):")
-    typer.echo()
-
-    # Compact mode - counts only
-    if compact:
-        typer.echo(f"  Added:    {len(added):>4} event(s)")
-        typer.echo(f"  Removed:  {len(removed):>4} event(s)")
-        typer.echo(f"  Modified: {len(modified):>4} event(s)")
-        typer.echo(f"  ─────────────────")
-        typer.echo(f"  Total:    {total_changes:>4} change(s)")
-        return True
-
-    # Detailed output
-    if added:
-        typer.echo(typer.style("Added events:", fg=typer.colors.GREEN, bold=True))
-        for event in sorted(added, key=lambda e: (e.date, e.start or e.date)):
-            typer.echo(
-                typer.style(
-                    f"  + {_format_event_summary(event)}", fg=typer.colors.GREEN
-                )
-            )
-        typer.echo()
-
-    if removed:
-        typer.echo(typer.style("Removed events:", fg=typer.colors.RED, bold=True))
-        for event in sorted(removed, key=lambda e: (e.date, e.start or e.date)):
-            typer.echo(
-                typer.style(f"  - {_format_event_summary(event)}", fg=typer.colors.RED)
-            )
-        typer.echo()
-
-    if modified:
-        typer.echo(typer.style("Modified events:", fg=typer.colors.YELLOW, bold=True))
-        for old_event, new_event in sorted(
-            modified, key=lambda x: (x[1].date, x[1].start or x[1].date)
-        ):
-            typer.echo(
-                typer.style(
-                    f"  ~ {_format_event_summary(new_event)}", fg=typer.colors.YELLOW
-                )
-            )
-            # Show what changed
-            if old_event.title != new_event.title:
-                typer.echo(f"      title: {old_event.title} → {new_event.title}")
-            if old_event.date != new_event.date:
-                typer.echo(f"      date: {old_event.date} → {new_event.date}")
-            if old_event.start != new_event.start:
-                old_time = (
-                    old_event.start.strftime("%H:%M") if old_event.start else "none"
-                )
-                new_time = (
-                    new_event.start.strftime("%H:%M") if new_event.start else "none"
-                )
-                typer.echo(f"      start: {old_time} → {new_time}")
-            if old_event.end != new_event.end:
-                old_time = old_event.end.strftime("%H:%M") if old_event.end else "none"
-                new_time = new_event.end.strftime("%H:%M") if new_event.end else "none"
-                typer.echo(f"      end: {old_time} → {new_time}")
-            if old_event.location != new_event.location:
-                typer.echo(
-                    f"      location: {old_event.location or 'none'} → {new_event.location or 'none'}"
-                )
-        typer.echo()
-
-    # Summary line
-    summary_parts = []
-    if added:
-        summary_parts.append(typer.style(f"+{len(added)}", fg=typer.colors.GREEN))
-    if removed:
-        summary_parts.append(typer.style(f"-{len(removed)}", fg=typer.colors.RED))
-    if modified:
-        summary_parts.append(typer.style(f"~{len(modified)}", fg=typer.colors.YELLOW))
-    typer.echo(f"Summary: {', '.join(summary_parts)}")
-
-    return True
+    renderer = DiffRenderer()
+    return renderer.render_diff(
+        added,
+        removed,
+        modified,
+        old_label=old_label,
+        new_label=new_label,
+        compact=compact,
+    )

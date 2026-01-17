@@ -1,7 +1,7 @@
 {
     "name": "mazurek",
     "version": "1.0",
-    "extends": "medical_default",
+    "extends": "default",
     "locations": {
         "work": {
             "address": "1403 29 St NW, Calgary AB T2N 2T9, Canada",
@@ -10,6 +10,75 @@
                 -114.133306
             ],
             "apple_title": "Foothills Medical Centre"
+        }
+    },
+    "types": {
+        "on_call": {
+            "match": "on call",
+            "label": "^(.+?)\\s+on call",
+            "location": "work",
+            "consolidate": {
+                "group_by": "label",
+                "pattern_aware": true
+            },
+            "overnight": {
+                "as": "all_day",
+                "format": "{label} on call {time_range}"
+            }
+        },
+        "endoscopy": {
+            "match": [
+                "endoscopy",
+                "endo",
+                "DTP"
+            ],
+            "location": "work",
+            "consolidate": false,
+            "time_periods": {
+                "AM": [
+                    "0730",
+                    "1200"
+                ],
+                "PM": [
+                    "1230",
+                    "1630"
+                ]
+            }
+        },
+        "ccsc": {
+            "match": "ccsc",
+            "location": "work",
+            "consolidate": false,
+            "time_periods": {
+                "AM": [
+                    "0730",
+                    "1200"
+                ],
+                "PM": [
+                    "1230",
+                    "1630"
+                ]
+            }
+        },
+        "clinic": {
+            "match": "clinic",
+            "location": "work",
+            "consolidate": false
+        },
+        "admin": {
+            "match": "admin",
+            "location": "office",
+            "consolidate": false
+        },
+        "holiday": {
+            "suppress": true
+        },
+        "vacation": {
+            "match": [
+                "vacation",
+                "away"
+            ],
+            "busy": false
         }
     }
 }

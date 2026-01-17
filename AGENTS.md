@@ -36,7 +36,7 @@ poetry run pytest -k "pattern"
 **CLI Tool:**
 ```bash
 # Via poetry script
-calendar-sync [command]
+calsync [command]
 
 # Via poetry run
 poetry run calendar-sync [command]

@@ -1,110 +1,87 @@
-"""CLI utilities for logging and output formatting."""
+"""CLI utilities for user interaction.
 
-import logging
-from datetime import datetime, timezone
-from typing import Dict
+Display-related functions have been moved to cli.display module.
+This module now contains only user interaction utilities.
+"""
 
-logger = logging.getLogger(__name__)
+import typer
+
+# Re-export display functions for backwards compatibility
+# These are deprecated - use cli.display directly instead
+from cli.display.formatters import format_file_size, format_relative_time
+from cli.display.summary_renderer import SummaryRenderer
+
+# Create a default renderer instance for backwards compatibility
+_summary_renderer = SummaryRenderer()
+
+
+def confirm_or_exit(prompt: str = "Continue?", force: bool = False) -> None:
+    """Prompt for confirmation unless force is True. Exits if declined.
+
+    Args:
+        prompt: The confirmation prompt to display.
+        force: If True, skip the confirmation prompt.
+    """
+    if not force:
+        typer.echo()
+        if not typer.confirm(prompt):
+            typer.echo("Operation cancelled.")
+            raise typer.Exit(0)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Backwards compatibility wrappers (deprecated)
+# Use SummaryRenderer from cli.display instead
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+def print_header(title: str, calendar_name: str) -> None:
+    """Print a styled header for a command.
+
+    DEPRECATED: Use SummaryRenderer.render_header() instead.
+    """
+    _summary_renderer.render_header(title, calendar_name)
+
+
+def print_source_info(input_path, ingestion_summary, template) -> None:
+    """Print source file information.
+
+    DEPRECATED: Use SummaryRenderer.render_source_info() instead.
+    """
+    _summary_renderer.render_source_info(input_path, ingestion_summary, template)
+
+
+def print_processing_summary(processing_summary: dict) -> None:
+    """Format processing summary with arrow notation.
+
+    DEPRECATED: Use SummaryRenderer.render_processing_summary() instead.
+    """
+    _summary_renderer.render_processing_summary(processing_summary)
+
+
+def print_stats(ingestion_summary: dict) -> None:
+    """Format statistics in a compact single line.
+
+    DEPRECATED: Use SummaryRenderer.render_stats() instead.
+    """
+    _summary_renderer.render_stats(ingestion_summary)
+
+
+def print_success(message: str, path=None) -> None:
+    """Print a success message with optional file path.
+
+    DEPRECATED: Use SummaryRenderer.render_success() instead.
+    """
+    _summary_renderer.render_success(message, path)
 
 
 def format_processing_summary(
-    processing_summary: Dict, ingestion_summary: Dict | None = None
+    processing_summary: dict, ingestion_summary: dict | None = None
 ) -> None:
+    """Format and display processing summary.
+
+    DEPRECATED: Use SummaryRenderer methods instead.
     """
-    Format and display processing summary.
-
-    Args:
-        processing_summary: Dictionary with input_counts, output_counts, input_total, output_total
-        ingestion_summary: Optional dictionary with weekly coverage stats
-    """
-    if not processing_summary:
-        return
-
-    input_counts = processing_summary.get("input_counts", {})
-    output_counts = processing_summary.get("output_counts", {})
-    input_total = processing_summary.get("input_total", 0)
-    output_total = processing_summary.get("output_total", 0)
-
-    if input_counts:
-        print("Processing (Event type: count):")
-        for event_type, count in sorted(input_counts.items()):
-            output_count = output_counts.get(event_type, 0)
-            if output_count != count:
-                print(f"  - {event_type}: {count} (Collapsed to {output_count})")
-            else:
-                print(f"  - {event_type}: {count}")
-
-        if output_total != input_total:
-            print(f"  - Total: {input_total} (Collapsed to {output_total})")
-        else:
-            print(f"  - Total: {input_total}")
-
+    _summary_renderer.render_processing_summary(processing_summary)
     if ingestion_summary:
-        total_halfdays = ingestion_summary.get("total_halfdays")
-        weekly_coverage_year = ingestion_summary.get("weekly_coverage_year")
-        if total_halfdays is not None or weekly_coverage_year is not None:
-            print("Statistics:")
-        if total_halfdays is not None:
-            print(f"  - Half-days booked: {total_halfdays}")
-        if weekly_coverage_year is not None:
-            print(f"  - Coverage: {weekly_coverage_year:.1f} half days per week")
-
-
-def format_relative_time(commit_date: datetime) -> str:
-    """
-    Format datetime as relative time for recent commits.
-
-    Args:
-        commit_date: Datetime to format
-
-    Returns:
-        Formatted time string (e.g., "2h ago", "1w ago", "3mo ago", "1y ago")
-    """
-    if commit_date.tzinfo is None:
-        # If no timezone, assume UTC
-        commit_date = commit_date.replace(tzinfo=timezone.utc)
-
-    now = datetime.now(timezone.utc)
-    time_diff = now - commit_date
-
-    if time_diff.days == 0:
-        if time_diff.seconds < 60:  # Less than 1 minute
-            return "just now"
-        elif time_diff.seconds < 3600:  # Less than 1 hour
-            minutes = time_diff.seconds // 60
-            return f"{minutes}m ago"
-        else:  # Less than 24 hours
-            hours = time_diff.seconds // 3600
-            return f"{hours}h ago"
-    elif time_diff.days < 7:
-        return f"{time_diff.days}d ago"
-    elif time_diff.days < 30:
-        # Weeks (1-4 weeks)
-        weeks = time_diff.days // 7
-        return f"{weeks}w ago"
-    elif time_diff.days < 365:
-        # Months (1-11 months)
-        months = time_diff.days // 30
-        return f"{months}mo ago"
-    else:
-        # Years
-        years = time_diff.days // 365
-        return f"{years}y ago"
-
-
-def format_file_size(size_bytes: int) -> str:
-    """
-    Format file size in human-readable format.
-
-    Args:
-        size_bytes: File size in bytes
-
-    Returns:
-        Formatted size string (e.g., "1.5KB", "2.3MB")
-    """
-    size = float(size_bytes)
-    for unit in ["B", "KB", "MB", "GB"]:
-        if size < 1024.0:
-            return f"{size:.1f}{unit}"
-        size /= 1024.0
-    return f"{size:.1f}TB"
+        _summary_renderer.render_stats(ingestion_summary)

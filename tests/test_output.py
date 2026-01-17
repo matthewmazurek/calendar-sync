@@ -11,7 +11,6 @@ from app.models.calendar import Calendar
 from app.models.event import Event
 from app.models.metadata import CalendarMetadata, CalendarWithMetadata
 from app.output.ics_writer import ICSWriter
-from app.output.json_writer import JSONWriter
 
 
 def make_calendar_with_metadata(calendar: Calendar, name: str = "test") -> CalendarWithMetadata:
@@ -94,8 +93,8 @@ def test_ics_writer_get_extension():
     assert writer.get_extension() == "ics"
 
 
-def test_json_writer():
-    """Test JSONWriter creates valid JSON file."""
+def test_calendar_with_metadata_save_load():
+    """Test CalendarWithMetadata native JSON save/load."""
     events = [
         Event(
             title="Test Event",
@@ -111,24 +110,18 @@ def test_json_writer():
         temp_path = Path(f.name)
 
     try:
-        writer = JSONWriter()
-        writer.write(calendar_with_metadata, temp_path)
+        # Save using native method
+        calendar_with_metadata.save(temp_path)
 
         # Verify file was created
         assert temp_path.exists()
 
-        # Verify it's valid JSON
-        import json
-        with open(temp_path, 'r') as f:
-            data = json.load(f)
-            assert "events" in data
-            assert len(data["events"]) == 1
-            assert data["events"][0]["title"] == "Test Event"
+        # Load back using native method
+        loaded = CalendarWithMetadata.load(temp_path)
+
+        # Verify data integrity
+        assert loaded.metadata.name == calendar_with_metadata.metadata.name
+        assert len(loaded.calendar.events) == 1
+        assert loaded.calendar.events[0].title == "Test Event"
     finally:
         temp_path.unlink()
-
-
-def test_json_writer_get_extension():
-    """Test JSONWriter returns correct extension."""
-    writer = JSONWriter()
-    assert writer.get_extension() == "json"

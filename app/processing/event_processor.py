@@ -31,20 +31,20 @@ def process_events_with_template(
         )
         template = build_default_template()
 
-    # Count events by type before processing
+    # Count events by type before processing (normalize to lowercase)
     input_type_counts: dict[str, int] = defaultdict(int)
     for event in events:
-        type_value = event.type or event.get_type_enum().value
+        type_value = event.type or event.get_type_enum().value.lower()
         input_type_counts[type_value] += 1
 
     # Process with template
     processor = ConfigurableEventProcessor(template)
     processed_events = processor.process(events)
 
-    # Count events by type after processing
+    # Count events by type after processing (normalize to lowercase)
     output_type_counts: dict[str, int] = defaultdict(int)
     for event in processed_events:
-        type_value = event.type or event.get_type_enum().value
+        type_value = event.type or event.get_type_enum().value.lower()
         output_type_counts[type_value] += 1
 
     summary = {

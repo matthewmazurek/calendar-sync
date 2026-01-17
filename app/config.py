@@ -14,7 +14,6 @@ except ImportError:
 class CalendarConfig(BaseModel):
     """Calendar configuration with Pydantic validation."""
 
-    default_format: str = Field(default="ics")
     calendar_dir: Path = Field(default=Path("data/calendars"))
     ls_default_limit: int = Field(default=5, ge=1)
     calendar_git_remote_url: str | None = None
@@ -30,8 +29,6 @@ class CalendarConfig(BaseModel):
 
         # Build config dict from environment
         config_dict = {}
-        if "CALENDAR_FORMAT" in os.environ:
-            config_dict["default_format"] = os.environ["CALENDAR_FORMAT"]
         if "CALENDAR_DIR" in os.environ:
             config_dict["calendar_dir"] = Path(os.environ["CALENDAR_DIR"])
         if "LS_DEFAULT_LIMIT" in os.environ:

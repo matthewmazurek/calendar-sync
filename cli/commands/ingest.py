@@ -1,8 +1,4 @@
-"""Sync calendar data file and create or update calendar.
-
-This command combines ingestion, export, and optional push into a single
-workflow. It's equivalent to running: ingest → export → commit → push.
-"""
+"""Ingest calendar data file and save as canonical JSON."""
 
 import logging
 import sys
@@ -18,13 +14,13 @@ from app.models.template_loader import get_template
 from app.processing.calendar_manager import CalendarManager
 from cli.commands.diff import display_diff
 from cli.context import get_context
-from cli.display import SummaryRenderer
+from cli.display import SummaryRenderer, console
 from cli.utils import confirm_or_exit
 
 logger = logging.getLogger(__name__)
 
 
-def sync_command(
+def ingest_command(
     calendar_name: Annotated[
         str,
         typer.Argument(help="Calendar name to create or update"),
@@ -45,20 +41,27 @@ def sync_command(
             "--template", "-t", help="Template name to use (overrides config)"
         ),
     ] = None,
-    push: Annotated[
-        bool,
-        typer.Option("--push", "-p", help="Commit and push calendar changes to git"),
-    ] = False,
     force: Annotated[
         bool,
-        typer.Option("--force", "-f", help="Skip confirmation prompt"),
+        typer.Option(
+            "--force", "-f", help="Skip confirmation prompt and save directly"
+        ),
     ] = False,
 ) -> None:
-    """Sync calendar data file and create or update calendar."""
+    """Ingest calendar data file and save as canonical JSON.
+
+    This command reads a source file (Word, ICS, or JSON), processes it
+    using the template, and saves to calendar_data.json.
+
+    By default, shows a preview and prompts for confirmation before saving.
+    Use --force to skip the confirmation and save directly.
+
+    Note: This only saves the JSON file. Use 'export' to generate ICS,
+    and 'commit' to commit changes to git.
+    """
     ctx = get_context()
     config = ctx.config
     repository = ctx.repository
-    git_service = ctx.git_service
     reader_registry = ctx.reader_registry
     renderer = SummaryRenderer()
 
@@ -107,7 +110,7 @@ def sync_command(
     # ─────────────────────────────────────────────────────────────────────────
     # Output: Header
     # ─────────────────────────────────────────────────────────────────────────
-    action = "Creating" if ingestion_ctx.is_new else "Updating"
+    action = "Ingesting (new)" if ingestion_ctx.is_new else "Ingesting (update)"
     renderer.render_header(action, calendar_name)
 
     # ─────────────────────────────────────────────────────────────────────────
@@ -158,34 +161,26 @@ def sync_command(
         )
 
     # ─────────────────────────────────────────────────────────────────────────
-    # Confirmation
+    # Confirmation and Save
     # ─────────────────────────────────────────────────────────────────────────
-    confirm_or_exit("Continue?", force)
+    confirm_or_exit("Save calendar JSON?", force)
 
-    # ─────────────────────────────────────────────────────────────────────────
-    # Save: JSON + ICS export + local commit
-    # ─────────────────────────────────────────────────────────────────────────
-    filepath = repository.save_calendar(
+    # Save calendar JSON only (no ICS export, no commit)
+    json_path = repository.save_json(
         processing_result.result.calendar,
         processing_result.result.metadata,
-        template=template,
     )
 
     # Success message
     if ingestion_ctx.is_new:
-        renderer.render_success("Calendar created", filepath)
+        renderer.render_success("Calendar ingested (new)", json_path)
     else:
-        renderer.render_success(f"Calendar updated (year {processing_result.year})", filepath)
+        renderer.render_success(f"Calendar ingested (year {processing_result.year})", json_path)
 
-    logger.info(f"Calendar saved: {filepath}")
-
-    # ─────────────────────────────────────────────────────────────────────────
-    # Publish to git (optional)
-    # ─────────────────────────────────────────────────────────────────────────
-    if push:
-        git_service.publish_calendar(calendar_name, filepath)
-        renderer.render_success("Pushed to git")
+    console.print(f"\n[bold]Next steps:[/bold]")
+    console.print(f"  • Run 'export {calendar_name}' to generate ICS")
+    console.print(f"  • Run 'commit {calendar_name}' to commit to git")
 
 
-# Alias for backwards compatibility with CLI registration
-sync = sync_command
+# Alias for CLI registration
+ingest = ingest_command

@@ -6,6 +6,7 @@ from datetime import timezone
 import typer
 from typing_extensions import Annotated
 
+from app.models.template_loader import get_template
 from cli.commands.diff import display_diff
 from cli.context import get_context
 
@@ -32,7 +33,6 @@ def restore(
     ctx = get_context()
     repository = ctx.repository
     git_service = ctx.git_service
-    config = ctx.config
 
     # Check if calendar has any versions in git history (works for deleted calendars too)
     versions = repository.list_calendar_versions(name)
@@ -109,13 +109,11 @@ def restore(
     date_str = commit_date.strftime("%Y-%m-%d %H:%M")
 
     # Load current calendar (before restore) for diff
-    current_result = repository.load_calendar(name, config.default_format)
+    current_result = repository.load_calendar(name)
     current_calendar = current_result.calendar if current_result else None
 
     # Load target calendar version for diff preview
-    target_result = repository.load_calendar_by_commit(
-        name, target_commit, config.default_format
-    )
+    target_result = repository.load_calendar_by_commit(name, target_commit)
     target_calendar = target_result.calendar if target_result else None
 
     # Show confirmation prompt unless --force is set
@@ -139,10 +137,23 @@ def restore(
     # Ensure calendar directory exists (for deleted calendars)
     calendar_dir.mkdir(parents=True, exist_ok=True)
 
-    # Restore entire directory from git (includes calendar.ics, metadata.json, etc.)
+    # Restore entire directory from git (includes calendar_data.json, calendar.ics, etc.)
     if git_service.restore_directory_version(calendar_dir, target_commit):
-        # Get full path for clickable link
-        calendar_path = (calendar_dir / f"calendar.{config.default_format}").resolve()
+        # Get path for clickable link (ICS export file)
+        calendar_path = calendar_dir / "calendar.ics"
+
+        # Re-export ICS to ensure location_id references are resolved
+        # (for calendars that use location_id)
+        try:
+            restored = repository.load_calendar(name)
+            if restored and restored.metadata.template_name:
+                template = get_template(
+                    restored.metadata.template_name, ctx.config.template_dir
+                )
+                repository.export_ics(name, template=template)
+                logger.info("Re-exported ICS with template resolution")
+        except Exception as e:
+            logger.debug(f"ICS re-export skipped: {e}")
 
         # Show diff after restore when using --force
         if force:

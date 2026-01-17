@@ -23,8 +23,8 @@ from app.ingestion.base import ReaderRegistry
 from app.ingestion.ics_reader import ICSReader
 from app.ingestion.json_reader import JSONReader
 from app.ingestion.word_reader import WordReader
+from app.models.template_loader import get_template
 from app.output.ics_writer import ICSWriter
-from app.output.json_writer import JSONWriter
 from app.processing.calendar_manager import CalendarManager
 from app.storage.calendar_repository import CalendarRepository
 from app.storage.calendar_storage import CalendarStorage
@@ -42,14 +42,17 @@ def setup_reader_registry() -> ReaderRegistry:
     return registry
 
 
-def setup_writer(format: str):
-    """Get writer for format."""
-    if format == "ics":
-        return ICSWriter()
-    elif format == "json":
-        return JSONWriter()
-    else:
-        raise UnsupportedFormatError(f"Unsupported output format: {format}")
+def get_ics_writer():
+    """Get ICS writer for calendar export."""
+    return ICSWriter()
+
+
+def setup_writer(format: str = "ics"):
+    """Get writer for format. Deprecated - use get_ics_writer() instead.
+
+    Kept for backwards compatibility. Always returns ICSWriter.
+    """
+    return ICSWriter()
 
 
 def create_app():
@@ -103,20 +106,7 @@ def create_app():
 
         # Get query parameters
         year = request.args.get("year", type=int)
-        format_param = request.args.get("format", "ics")
         publish = request.args.get("publish", "false").lower() == "true"
-
-        # Validate format
-        if format_param not in ["ics", "json"]:
-            return (
-                jsonify(
-                    {
-                        "error": f"Unsupported format: {format_param}",
-                        "type": "UnsupportedFormatError",
-                    }
-                ),
-                400,
-            )
 
         # Save uploaded file to temp location
         filename = file.filename
@@ -140,7 +130,7 @@ def create_app():
                 return handle_error(e)
 
             # Check if calendar exists
-            existing = repository.load_calendar(calendar_name, format_param)
+            existing = repository.load_calendar(calendar_name)
 
             if existing is None:
                 # Create new calendar
@@ -151,16 +141,15 @@ def create_app():
                 except InvalidYearError as e:
                     return handle_error(e)
 
-                # Save calendar
-                writer = setup_writer(format_param)
+                # Save calendar (stores as JSON, exports to ICS)
                 filepath = repository.save_calendar(
-                    result.calendar, result.metadata, writer
+                    result.calendar, result.metadata
                 )
 
                 # Publish to git if requested
                 published = False
                 if publish:
-                    git_service.publish_calendar(calendar_name, filepath, format_param)
+                    git_service.publish_calendar(calendar_name, filepath)
                     published = True
 
                 return (
@@ -172,7 +161,6 @@ def create_app():
                             "events_count": len(result.calendar.events),
                             "processing_summary": processing_summary,
                             "filepath": str(filepath),
-                            "format": format_param,
                             "published": published,
                         }
                     ),
@@ -205,16 +193,15 @@ def create_app():
                 except (CalendarNotFoundError, InvalidYearError) as e:
                     return handle_error(e)
 
-                # Save updated calendar
-                writer = setup_writer(format_param)
+                # Save updated calendar (stores as JSON, exports to ICS)
                 filepath = repository.save_calendar(
-                    result.calendar, result.metadata, writer
+                    result.calendar, result.metadata
                 )
 
                 # Publish to git if requested
                 published = False
                 if publish:
-                    git_service.publish_calendar(calendar_name, filepath, format_param)
+                    git_service.publish_calendar(calendar_name, filepath)
                     published = True
 
                 return (
@@ -227,7 +214,6 @@ def create_app():
                             "events_count": len(result.calendar.events),
                             "processing_summary": processing_summary,
                             "filepath": str(filepath),
-                            "format": format_param,
                             "published": published,
                         }
                     ),
@@ -245,25 +231,9 @@ def create_app():
 
     @app.route("/calendars/<calendar_name>", methods=["GET"])
     def get_calendar(calendar_name: str):
-        """Get a calendar by name."""
-        format_param = request.args.get("format", "ics")
-
-        # Validate format
-        if format_param not in ["ics", "json"]:
-            return (
-                jsonify(
-                    {
-                        "error": f"Unsupported format: {format_param}",
-                        "type": "UnsupportedFormatError",
-                    }
-                ),
-                400,
-            )
-
+        """Get a calendar by name (always returns ICS format)."""
         try:
-            calendar_with_metadata = repository.load_calendar(
-                calendar_name, format_param
-            )
+            calendar_with_metadata = repository.load_calendar(calendar_name)
             if calendar_with_metadata is None:
                 return (
                     jsonify(
@@ -275,27 +245,28 @@ def create_app():
                     404,
                 )
 
-            # Get appropriate writer
-            writer = setup_writer(format_param)
+            # Get template for resolving location_id references
+            template = None
+            metadata = calendar_with_metadata.metadata
+            if metadata.template_name:
+                try:
+                    template = get_template(metadata.template_name, config.template_dir)
+                except FileNotFoundError:
+                    logger.warning(f"Template '{metadata.template_name}' not found")
+
+            # Export to ICS format
+            writer = get_ics_writer()
 
             # Write to temp file to get bytes
-            with temp_file_path(suffix=f".{format_param}") as temp_path:
-                writer.write(calendar_with_metadata, temp_path)
+            with temp_file_path(suffix=".ics") as temp_path:
+                writer.write(calendar_with_metadata, temp_path, template=template)
                 content = temp_path.read_bytes()
-
-                # Set appropriate content type
-                if format_param == "ics":
-                    content_type = "text/calendar; charset=utf-8"
-                    filename = f"{calendar_name}.ics"
-                else:
-                    content_type = "application/json; charset=utf-8"
-                    filename = f"{calendar_name}.json"
 
                 return Response(
                     content,
-                    content_type=content_type,
+                    content_type="text/calendar; charset=utf-8",
                     headers={
-                        "Content-Disposition": f'attachment; filename="{filename}"'
+                        "Content-Disposition": f'attachment; filename="{calendar_name}.ics"'
                     },
                 )
 
@@ -330,7 +301,6 @@ def create_app():
                                 if metadata.last_updated
                                 else None
                             ),
-                            "format": metadata.format,
                         }
                     )
                 else:

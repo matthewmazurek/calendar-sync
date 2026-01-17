@@ -54,26 +54,38 @@ def main_callback(
     set_context(ctx)
 
 
+from cli.commands.commit import commit
 from cli.commands.config import config
 from cli.commands.delete import delete
 from cli.commands.diff import diff
+from cli.commands.export import export
 from cli.commands.git_setup import git_setup
 from cli.commands.info import info
+from cli.commands.ingest import ingest
 from cli.commands.ls import ls
-from cli.commands.publish import publish
+from cli.commands.push import push
 from cli.commands.restore import restore
+from cli.commands.search import search
+from cli.commands.show import show
+from cli.commands.stats import stats
 
 # Import and register commands
 from cli.commands.sync import sync
 from cli.commands.template import template
 
 app.command(name="sync")(sync)
+app.command(name="ingest")(ingest)
+app.command(name="export")(export)
+app.command(name="commit")(commit)
 app.command(name="ls")(ls)
+app.command(name="show")(show)
+app.command(name="search")(search)
 app.command(name="restore")(restore)
 app.command(name="info")(info)
+app.command(name="stats")(stats)
 app.command(name="delete")(delete)
 app.command(name="diff")(diff)
-app.command(name="publish")(publish)
+app.command(name="push")(push)
 app.command(name="git-setup")(git_setup)
 app.command(name="config")(config)
 app.command(name="template")(template)

@@ -3,18 +3,27 @@
 import json
 from datetime import datetime
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from app.exceptions import CalendarNotFoundError
 from app.ingestion.base import ReaderRegistry
 from app.models.calendar import Calendar
 from app.models.metadata import CalendarMetadata, CalendarWithMetadata
-from app.output.base import CalendarWriter
+from app.output.ics_writer import ICSWriter
 from app.storage.calendar_storage import CalendarStorage
 from app.storage.git_service import GitService
+
+if TYPE_CHECKING:
+    from app.models.template import CalendarTemplate
 
 
 class CalendarRepository:
     """Repository for managing named calendars with dependency injection."""
+
+    # Canonical storage format is JSON (calendar_data.json)
+    CANONICAL_FILENAME = "calendar_data.json"
+    # ICS is export-only format
+    ICS_EXPORT_FILENAME = "calendar.ics"
 
     def __init__(
         self,
@@ -30,7 +39,7 @@ class CalendarRepository:
             calendar_dir: Base directory for calendars
             storage: CalendarStorage instance (dependency injection)
             git_service: GitService instance (dependency injection)
-            reader_registry: ReaderRegistry instance (dependency injection)
+            reader_registry: ReaderRegistry instance (for ingesting source files)
         """
         self.calendar_dir = calendar_dir
         self.storage = storage
@@ -41,48 +50,71 @@ class CalendarRepository:
         """Get directory for named calendar."""
         return self.calendar_dir / name
 
-    def _get_metadata_path(self, name: str) -> Path:
-        """Get path to metadata file."""
-        return self._get_calendar_dir(name) / "metadata.json"
+    def _get_canonical_path(self, name: str) -> Path:
+        """Get path to canonical JSON storage file."""
+        return self._get_calendar_dir(name) / self.CANONICAL_FILENAME
+
+    def _get_ics_export_path(self, name: str) -> Path:
+        """Get path to ICS export file."""
+        return self._get_calendar_dir(name) / self.ICS_EXPORT_FILENAME
 
     def _get_calendar_file_path(self, name: str, format: str = "ics") -> Path:
-        """Get path to calendar file."""
+        """Get path to calendar file (for backwards compatibility)."""
         calendar_dir = self._get_calendar_dir(name)
         return calendar_dir / f"calendar.{format}"
 
-    def load_calendar(
-        self, name: str, format: str = "ics"
-    ) -> CalendarWithMetadata | None:
+    def load_calendar(self, name: str, format: str = "ics") -> CalendarWithMetadata | None:
         """
-        Load calendar by name.
+        Load calendar by name from canonical JSON storage.
 
-        Loads calendar.{ext} file directly.
+        The format parameter is kept for backwards compatibility but ignored.
+        Calendars are always loaded from the canonical JSON format.
         """
         calendar_dir = self._get_calendar_dir(name)
         if not calendar_dir.exists():
             return None
 
-        calendar_path = self._get_calendar_file_path(name, format)
-        if not calendar_path.exists():
+        canonical_path = self._get_canonical_path(name)
+
+        # Try loading from canonical JSON first
+        if canonical_path.exists():
+            return CalendarWithMetadata.load(canonical_path)
+
+        # Fall back to legacy ICS format for migration
+        legacy_ics_path = self._get_ics_export_path(name)
+        if legacy_ics_path.exists():
+            # Load from legacy ICS using reader
+            reader = self.reader_registry.get_reader(legacy_ics_path)
+            ingestion_result = reader.read(legacy_ics_path)
+            calendar = ingestion_result.calendar
+
+            # Load or create metadata
+            metadata = self._load_legacy_metadata(name)
+            if metadata is None:
+                metadata = CalendarMetadata(
+                    name=name,
+                    created=datetime.now(),
+                    last_updated=datetime.now(),
+                )
+
+            return CalendarWithMetadata(calendar=calendar, metadata=metadata)
+
+        return None
+
+    def _load_legacy_metadata(self, name: str) -> CalendarMetadata | None:
+        """Load metadata from legacy metadata.json file, ignoring 'format' field."""
+        metadata_path = self._get_calendar_dir(name) / "metadata.json"
+        if not metadata_path.exists():
             return None
 
-        # Load calendar using appropriate reader
-        reader = self.reader_registry.get_reader(calendar_path)
-        ingestion_result = reader.read(calendar_path)
-        calendar = ingestion_result.calendar
-
-        # Load metadata
-        metadata = self.load_metadata(name)
-        if metadata is None:
-            # Create default metadata if not found
-            metadata = CalendarMetadata(
-                name=name,
-                created=datetime.now(),
-                last_updated=datetime.now(),
-                format=format,
-            )
-
-        return CalendarWithMetadata(calendar=calendar, metadata=metadata)
+        try:
+            with open(metadata_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            # Remove 'format' field if present (legacy)
+            data.pop("format", None)
+            return CalendarMetadata(**data)
+        except (OSError, ValueError, KeyError):
+            return None
 
     def load_calendar_by_commit(
         self, name: str, commit: str, format: str = "ics"
@@ -93,98 +125,165 @@ class CalendarRepository:
         Args:
             name: Calendar name
             commit: Git commit hash or tag
-            format: Calendar format
+            format: Ignored (kept for backwards compatibility)
 
         Returns:
             CalendarWithMetadata or None if not found
         """
-        calendar_path = self._get_calendar_file_path(name, format)
+        # Try canonical JSON first
+        canonical_path = self._get_canonical_path(name)
+        content = self.git_service.get_file_at_commit(canonical_path, commit)
 
-        # Get file content at specific commit
-        content = self.git_service.get_file_at_commit(calendar_path, commit)
+        if content is not None:
+            # Load from canonical JSON
+            return CalendarWithMetadata.model_validate_json(content.decode("utf-8"))
+
+        # Fall back to legacy ICS format
+        legacy_path = self._get_ics_export_path(name)
+        content = self.git_service.get_file_at_commit(legacy_path, commit)
         if content is None:
             return None
 
-        # Write to temp file for reading
+        # Write to temp file for reading legacy ICS
         from app.utils import temp_file_path
 
-        with temp_file_path(suffix=f".{format}") as tmp_path:
+        with temp_file_path(suffix=".ics") as tmp_path:
             tmp_path.write_bytes(content)
 
-            # Load calendar using appropriate reader
+            # Load calendar using ICS reader
             reader = self.reader_registry.get_reader(tmp_path)
             ingestion_result = reader.read(tmp_path)
             calendar = ingestion_result.calendar
 
             # Load metadata (use current metadata)
-            metadata = self.load_metadata(name)
+            metadata = self._load_legacy_metadata(name)
             if metadata is None:
                 metadata = CalendarMetadata(
                     name=name,
                     created=datetime.now(),
                     last_updated=datetime.now(),
-                    format=format,
                 )
 
             return CalendarWithMetadata(calendar=calendar, metadata=metadata)
 
-    def save_calendar(
-        self, calendar: Calendar, metadata: CalendarMetadata, writer: CalendarWriter
+    def save_json(
+        self, calendar: Calendar, metadata: CalendarMetadata
     ) -> Path:
         """
-        Save calendar with timestamp, updates metadata.
+        Save calendar to canonical JSON format only (no ICS export, no commit).
+
+        This is used by the ingest command. For full save with export and commit,
+        use save_calendar().
 
         Args:
             calendar: Calendar to save
             metadata: Calendar metadata
-            writer: CalendarWriter implementation
 
         Returns:
-            Path to saved file
+            Path to canonical JSON file
         """
         calendar_dir = self._get_calendar_dir(metadata.name)
         calendar_dir.mkdir(parents=True, exist_ok=True)
 
-        # Update metadata format
-        metadata.format = writer.get_extension()
+        # Update metadata timestamp
         metadata.last_updated = datetime.now()
 
-        # Save calendar file
+        # Create combined object
         calendar_with_metadata = CalendarWithMetadata(
             calendar=calendar, metadata=metadata
         )
-        filepath = self.storage.save_calendar(
-            calendar_with_metadata, writer, calendar_dir
-        )
 
-        # Save metadata
-        self.save_metadata(metadata)
+        # Save to canonical JSON format
+        canonical_path = self._get_canonical_path(metadata.name)
+        calendar_with_metadata.save(canonical_path)
+
+        return canonical_path
+
+    def save_calendar(
+        self,
+        calendar: Calendar,
+        metadata: CalendarMetadata,
+        writer=None,
+        template: "CalendarTemplate | None" = None,
+    ) -> Path:
+        """
+        Save calendar to canonical JSON format and export to ICS.
+
+        This is the main save method that:
+        1. Saves to canonical JSON format
+        2. Exports to ICS for subscriptions (with template resolution)
+        3. Commits locally for versioning
+
+        Args:
+            calendar: Calendar to save
+            metadata: Calendar metadata
+            writer: Deprecated, ignored (kept for backwards compatibility)
+            template: Optional template for resolving location_id references
+
+        Returns:
+            Path to ICS export file (for subscription URLs)
+        """
+        # Save JSON first
+        self.save_json(calendar, metadata)
+
+        # Export to ICS for calendar subscriptions
+        calendar_with_metadata = CalendarWithMetadata(
+            calendar=calendar, metadata=metadata
+        )
+        ics_path = self._get_ics_export_path(metadata.name)
+        ics_writer = ICSWriter()
+        ics_writer.write(calendar_with_metadata, ics_path, template=template)
 
         # Commit locally for versioning (always commit, even without --publish)
         self.git_service.commit_calendar_locally(metadata.name)
 
-        return filepath
+        # Return ICS path (used for subscription URLs)
+        return ics_path
 
-    def save_metadata(self, metadata: CalendarMetadata) -> None:
-        """Save metadata.json."""
-        metadata_path = self._get_metadata_path(metadata.name)
-        metadata_path.parent.mkdir(parents=True, exist_ok=True)
+    def export_ics(
+        self,
+        name: str,
+        template: "CalendarTemplate | None" = None,
+    ) -> Path:
+        """
+        Export calendar to ICS format with template resolution.
 
-        with open(metadata_path, "w", encoding="utf-8") as f:
-            json.dump(metadata.model_dump(), f, indent=2, default=str)
+        Loads the calendar from JSON and exports to ICS, resolving any
+        location_id references using the provided template.
+
+        Args:
+            name: Calendar name
+            template: Optional template for resolving location_id references
+
+        Returns:
+            Path to ICS export file
+
+        Raises:
+            CalendarNotFoundError: If calendar not found
+            ExportError: If location_id references cannot be resolved
+        """
+        calendar_with_metadata = self.load_calendar(name)
+        if calendar_with_metadata is None:
+            raise CalendarNotFoundError(f"Calendar '{name}' not found")
+
+        ics_path = self._get_ics_export_path(name)
+        ics_writer = ICSWriter()
+        ics_writer.write(calendar_with_metadata, ics_path, template=template)
+
+        return ics_path
 
     def load_metadata(self, name: str) -> CalendarMetadata | None:
-        """Load metadata.json."""
-        metadata_path = self._get_metadata_path(name)
-        if not metadata_path.exists():
-            return None
+        """Load metadata from canonical JSON file."""
+        canonical_path = self._get_canonical_path(name)
+        if canonical_path.exists():
+            try:
+                calendar_with_metadata = CalendarWithMetadata.load(canonical_path)
+                return calendar_with_metadata.metadata
+            except (OSError, ValueError):
+                pass
 
-        try:
-            with open(metadata_path, "r", encoding="utf-8") as f:
-                data = json.load(f)
-            return CalendarMetadata(**data)
-        except (OSError, ValueError, KeyError):
-            return None
+        # Fall back to legacy metadata.json
+        return self._load_legacy_metadata(name)
 
     def list_calendars(self, include_deleted: bool = False) -> list[str]:
         """
@@ -249,13 +348,20 @@ class CalendarRepository:
         List all versions from git log.
 
         Works even if the file doesn't exist in the working directory (checks git history).
+        The format parameter is kept for backwards compatibility but we check canonical JSON first.
 
         Returns:
             List of (commit_hash, commit_date, commit_message) tuples
         """
-        calendar_path = self._get_calendar_file_path(name, format)
-        # Don't check if file exists - git log works for deleted files too
-        return self.git_service.get_file_versions(calendar_path)
+        # Try canonical JSON first
+        canonical_path = self._get_canonical_path(name)
+        versions = self.git_service.get_file_versions(canonical_path)
+        if versions:
+            return versions
+
+        # Fall back to legacy ICS
+        legacy_path = self._get_ics_export_path(name)
+        return self.git_service.get_file_versions(legacy_path)
 
     def delete_calendar(self, name: str) -> None:
         """Delete calendar directory and all contents."""
@@ -267,11 +373,23 @@ class CalendarRepository:
 
     def get_calendar_path(self, name: str, format: str = "ics") -> Path | None:
         """
-        Get path to calendar file.
+        Get path to calendar export file (ICS).
 
-        Returns path to calendar.{ext} file.
+        The format parameter is kept for backwards compatibility but always returns ICS path.
+        Returns path to calendar.ics file.
         """
-        calendar_path = self._get_calendar_file_path(name, format)
-        if calendar_path.exists():
-            return calendar_path
+        ics_path = self._get_ics_export_path(name)
+        if ics_path.exists():
+            return ics_path
+        return None
+
+    def get_canonical_path(self, name: str) -> Path | None:
+        """
+        Get path to canonical JSON storage file.
+
+        Returns path to calendar_data.json file or None if not exists.
+        """
+        canonical_path = self._get_canonical_path(name)
+        if canonical_path.exists():
+            return canonical_path
         return None

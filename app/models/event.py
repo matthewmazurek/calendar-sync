@@ -57,11 +57,16 @@ class Event(BaseModel):
     start: time | None = None
     end: time | None = None
     end_date: date | None = None
-    location: str | None = None
+    
+    # Location: mutually exclusive - use location_id OR location, not both
+    location: str | None = None           # Full address (override/legacy)
+    location_id: str | None = None        # Reference to template location
     location_geo: tuple[float, float] | None = None
     location_apple_title: str | None = None
+    
     type: str | None = None
     label: str | None = None
+    busy: bool = True
 
     @field_validator("start", "end", mode="before")
     @classmethod
@@ -86,6 +91,17 @@ class Event(BaseModel):
         if self.end_date is not None:
             if self.end_date < self.date:
                 raise ValueError("end_date must be >= date")
+        return self
+
+    @model_validator(mode="after")
+    def validate_location_exclusivity(self):
+        """Ensure location and location_id are mutually exclusive."""
+        if self.location and self.location_id:
+            raise ValueError(
+                "Cannot specify both 'location' and 'location_id'. "
+                "Use 'location_id' to reference a template location, "
+                "or 'location' for a custom address."
+            )
         return self
 
     def get_type_enum(self) -> EventType:

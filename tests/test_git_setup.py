@@ -159,10 +159,10 @@ def test_git_setup_existing_repo(tmp_path, monkeypatch, mock_context):
 
     with patch.object(git_setup_module, "get_context", return_value=mock_context):
         # Should detect existing repo and remote
-        with patch("typer.echo") as mock_echo:
+        with patch("builtins.print") as mock_print:
             git_setup_func()
-            # Should print that repo already exists
-            assert any("already exists" in str(call) for call in mock_echo.call_args_list)
+            # Should print that repo is already configured
+            assert any("already configured" in str(call) for call in mock_print.call_args_list)
 
 
 def test_git_setup_init_new_repo(tmp_path, monkeypatch, mock_context):

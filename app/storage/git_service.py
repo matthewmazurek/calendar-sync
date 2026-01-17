@@ -5,7 +5,7 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
-from app.constants import CALENDAR_EXTENSIONS, METADATA_FILENAME
+from app.constants import CANONICAL_FILENAME, ICS_EXPORT_FILENAME
 from app.exceptions import GitCommandError, GitError, GitRepositoryNotFoundError
 from app.storage.git_client import GitClient, SubprocessGitClient
 
@@ -307,12 +307,15 @@ class GitService:
 
     # Publishing operations (from GitPublisher)
 
-    def commit_calendar_locally(self, calendar_name: str) -> None:
+    def commit_calendar_locally(
+        self, calendar_name: str, message: str | None = None
+    ) -> None:
         """
         Commit calendar changes locally (stage and commit, but don't push).
 
         Args:
             calendar_name: Name of the calendar
+            message: Optional custom commit message
         """
         if not self._is_git_repo():
             logger.debug("Not in a git repository, skipping local commit")
@@ -323,7 +326,7 @@ class GitService:
             self._stage_calendar_files(calendar_name)
 
             # Commit changes
-            commit_message = f"Update calendar: {calendar_name}"
+            commit_message = message or f"Update calendar: {calendar_name}"
             self._commit_changes(commit_message)
         except (GitError, GitCommandError) as e:
             logger.warning(f"Local git commit failed: {e}")
@@ -337,8 +340,8 @@ class GitService:
 
         Args:
             calendar_name: Name of the calendar
-            filepath: Path to the calendar file that was saved
-            format: Calendar format (ics or json)
+            filepath: Path to the calendar file (ICS export)
+            format: Deprecated, ignored (kept for backwards compatibility)
         """
 
         if not self._is_git_repo():
@@ -352,12 +355,12 @@ class GitService:
             # Push to remote
             self._push_changes()
 
-            # Generate and display subscription URLs
+            # Generate and display subscription URLs (always ICS)
             from app.storage.subscription_url_generator import SubscriptionUrlGenerator
 
             url_generator = SubscriptionUrlGenerator(self.repo_root, self.remote_url)
             urls = url_generator.generate_subscription_urls(
-                calendar_name, filepath, format
+                calendar_name, filepath, "ics"
             )
             if urls:
                 print("Calendar subscription URLs:")
@@ -391,19 +394,11 @@ class GitService:
                 return
 
             # Stage deletion of calendar files (use git rm to track deletion)
-            for ext in CALENDAR_EXTENSIONS:
-                calendar_file = calendar_dir / f"calendar.{ext}"
-                # Use git rm to stage deletion (works even if file doesn't exist in working dir)
-                # --ignore-unmatch prevents error if file doesn't exist in git
-                self.git_client.run_command(
-                    ["git", "rm", "--ignore-unmatch", str(calendar_file)],
-                    repo_root,
-                )
-
-            # Stage deletion of metadata file
-            metadata_file = calendar_dir / METADATA_FILENAME
+            calendar_file = calendar_dir / ICS_EXPORT_FILENAME
+            # Use git rm to stage deletion (works even if file doesn't exist in working dir)
+            # --ignore-unmatch prevents error if file doesn't exist in git
             self.git_client.run_command(
-                ["git", "rm", "--ignore-unmatch", str(metadata_file)],
+                ["git", "rm", "--ignore-unmatch", str(calendar_file)],
                 repo_root,
             )
 
@@ -528,6 +523,11 @@ class GitService:
         """
         Stage specific calendar files for commit.
 
+        Stages whatever files exist in the calendar directory:
+        - calendar_data.json (canonical source)
+        - calendar.ics (export for subscriptions)
+        - metadata.json (legacy, if present)
+
         Args:
             calendar_name: Name of the calendar to stage
         """
@@ -537,29 +537,22 @@ class GitService:
             raise GitRepositoryNotFoundError("Could not determine git repo root")
         repo_root = repo_root.resolve()
 
-        # Stage calendar file (could be .ics or .json)
-        for ext in CALENDAR_EXTENSIONS:
-            calendar_file = calendar_dir / f"calendar.{ext}"
-            if calendar_file.exists():
-                # Get relative path from repo root
-                rel_path = calendar_file.relative_to(repo_root)
+        # Files to stage (in order of priority)
+        files_to_stage = [
+            calendar_dir / CANONICAL_FILENAME,  # calendar_data.json
+            calendar_dir / ICS_EXPORT_FILENAME,  # calendar.ics
+        ]
+
+        for file_path in files_to_stage:
+            if file_path.exists():
+                rel_path = file_path.relative_to(repo_root)
                 result = self.git_client.run_command(
                     ["git", "add", str(rel_path)], repo_root
                 )
                 if result.returncode != 0:
                     raise GitCommandError(
-                        f"Failed to stage calendar file: {result.stderr}"
+                        f"Failed to stage {file_path.name}: {result.stderr}"
                     )
-
-        # Stage metadata file
-        metadata_file = calendar_dir / METADATA_FILENAME
-        if metadata_file.exists():
-            rel_path = metadata_file.relative_to(repo_root)
-            result = self.git_client.run_command(
-                ["git", "add", str(rel_path)], repo_root
-            )
-            if result.returncode != 0:
-                raise GitCommandError(f"Failed to stage metadata file: {result.stderr}")
 
     def _commit_changes(self, message: str) -> None:
         """Commit staged changes."""

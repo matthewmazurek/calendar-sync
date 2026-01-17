@@ -59,3 +59,9 @@ class GitCommandError(GitError):
     """Git command execution error."""
 
     pass
+
+
+class ExportError(CalendarError):
+    """Error during calendar export."""
+
+    pass

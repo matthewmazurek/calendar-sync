@@ -554,10 +554,15 @@ class ConfigurableEventProcessor:
     def _assign_locations(
         self, events: list[Event], location_ref: str | None
     ) -> list[Event]:
-        """Assign locations to events."""
+        """Assign location references to events.
+        
+        Sets location_id instead of expanding location details.
+        Location resolution happens at export time.
+        """
         if location_ref is None:
             return events
 
+        # Validate that location exists in template
         location_config = self.template.locations.get(location_ref)
         if not location_config:
             logger.warning(f"Location '{location_ref}' not found in template")
@@ -565,32 +570,13 @@ class ConfigurableEventProcessor:
 
         result = []
         for event in events:
-            # Only update fields that are provided in the location config
-            update_dict = {}
-
-            if not event.location:
-                # Event has no location - assign from template
-                if location_config.address is not None:
-                    update_dict["location"] = location_config.address
-                if location_config.geo is not None:
-                    update_dict["location_geo"] = location_config.geo
-                if location_config.apple_title is not None:
-                    update_dict["location_apple_title"] = location_config.apple_title
-            else:
-                # Event already has location - only add geo/apple_title if missing
-                if not event.location_geo and location_config.geo is not None:
-                    update_dict["location_geo"] = location_config.geo
-                if (
-                    not event.location_apple_title
-                    and location_config.apple_title is not None
-                ):
-                    update_dict["location_apple_title"] = location_config.apple_title
-
-            if update_dict:
-                updated_event = event.model_copy(update=update_dict)
+            # Only set location_id if event doesn't already have a location
+            if not event.location and not event.location_id:
+                # Set location_id reference (will be resolved at export time)
+                updated_event = event.model_copy(update={"location_id": location_ref})
                 result.append(updated_event)
             else:
-                # No updates needed, keep event as-is
+                # Event already has location or location_id - keep as-is
                 result.append(event)
 
         return result

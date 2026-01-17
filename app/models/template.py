@@ -39,6 +39,8 @@ class EventTypeConfig(BaseModel):
     consolidate: str | ConsolidateConfig | Literal[False] | None = None
     overnight: str | OvernightConfig | None = None
     time_periods: dict[str, tuple[str, str]] | None = None
+    suppress: bool = False
+    busy: bool = True
 
 
 class TemplateSettings(BaseModel):

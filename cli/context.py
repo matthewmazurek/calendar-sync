@@ -1,9 +1,8 @@
 """Shared CLI context with lazy-initialized dependencies."""
 
-from app import setup_reader_registry, setup_writer
+from app import setup_reader_registry
 from app.config import CalendarConfig
 from app.ingestion.base import ReaderRegistry
-from app.output.base import CalendarWriter
 from app.storage.calendar_repository import CalendarRepository
 from app.storage.calendar_storage import CalendarStorage
 from app.storage.git_service import GitService
@@ -79,20 +78,6 @@ class CLIContext:
                 self.reader_registry,
             )
         return self._repository
-
-    def get_writer(self, format: str) -> CalendarWriter:
-        """Get writer for the specified format.
-
-        Args:
-            format: Output format ('ics' or 'json')
-
-        Returns:
-            Writer instance for the format
-
-        Raises:
-            UnsupportedFormatError: If format is not supported
-        """
-        return setup_writer(format)
 
 
 # Global context instance (set by Typer callback)

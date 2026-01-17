@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 from app.config import CalendarConfig
+from app.constants import DEFAULT_TEMPLATE
 from app.ingestion.ics_reader import ICSReader
 from app.ingestion.word_reader import WordReader
 from app.models.metadata import CalendarMetadata, CalendarWithMetadata
@@ -35,7 +36,7 @@ def test_template_word_reader_type_assignment():
 
     # Load template
     config = CalendarConfig.from_env()
-    template = load_template("medical_default", config.template_dir)
+    template = load_template(DEFAULT_TEMPLATE, config.template_dir)
 
     # Read with template
     reader = WordReader()
@@ -62,9 +63,9 @@ def test_end_to_end_template_vs_expected_ics():
     if not docx_path.exists() or not expected_ics_path.exists():
         pytest.skip("Fixture files not found")
 
-    # Load template
+    # Load template (use medical_default since mazurek suppresses holidays)
     config = CalendarConfig.from_env()
-    template = load_template("mazurek", config.template_dir)
+    template = load_template(DEFAULT_TEMPLATE, config.template_dir)
 
     # Read and process with template
     word_reader = WordReader()
@@ -86,7 +87,8 @@ def test_end_to_end_template_vs_expected_ics():
                 calendar=processed_calendar, metadata=metadata
             )
             writer = ICSWriter()
-            writer.write(calendar_with_metadata, tmp_path)
+            # Pass template for resolving location_id references
+            writer.write(calendar_with_metadata, tmp_path, template=template)
 
             # Read both ICS files
             ics_reader = ICSReader()

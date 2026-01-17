@@ -1,8 +1,10 @@
 """Shared constants for calendar sync."""
 
-# File naming patterns
-CALENDAR_FILENAME_PATTERN = "calendar.{ext}"
-METADATA_FILENAME = "metadata.json"
+# Canonical storage format (JSON with calendar + metadata)
+CANONICAL_FILENAME = "calendar_data.json"
 
-# Calendar file extensions
-CALENDAR_EXTENSIONS = ["ics", "json"]
+# ICS export for subscriptions
+ICS_EXPORT_FILENAME = "calendar.ics"
+
+# Default template
+DEFAULT_TEMPLATE = "default"

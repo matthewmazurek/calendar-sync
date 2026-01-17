@@ -37,21 +37,31 @@ def git_setup(
         _delete_git_repository(calendar_dir)
         return
 
-    # Check if git repo already exists
+    # ─────────────────────────────────────────────────────────────────────────
+    # Header
+    # ─────────────────────────────────────────────────────────────────────────
+    print(f"\n{'━' * 40}")
+    print(typer.style("  Git Setup", bold=True))
+    print(f"{'━' * 40}")
+    print(f"\nDirectory: {calendar_dir}")
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # Check existing repository
+    # ─────────────────────────────────────────────────────────────────────────
     if (calendar_dir / ".git").exists():
-        # Check if remote is configured
         git_service = GitService(calendar_dir)
         remote_url = git_service.get_remote_url()
         if remote_url:
-            typer.echo(f"Git repository already exists in {calendar_dir}")
-            typer.echo(f"Remote URL: {remote_url}")
+            print("\nRepository already configured:")
+            print(f"  Remote: {remote_url}")
             return
 
-        typer.echo(f"Git repository already exists in {calendar_dir}")
-        typer.echo("No remote configured. Setting up remote...")
+        print("\nRepository exists but no remote configured.")
+        print("Setting up remote...")
     else:
         # Initialize git repo
-        typer.echo(f"Initializing git repository in {calendar_dir}...")
+        print("\nInitializing...")
+        print("  Creating git repository...", end=" ", flush=True)
         calendar_dir.mkdir(parents=True, exist_ok=True)
         try:
             subprocess.run(
@@ -60,33 +70,36 @@ def git_setup(
                 check=True,
                 capture_output=True,
             )
-            typer.echo("Git repository initialized.")
+            print(typer.style("done", fg=typer.colors.GREEN))
         except subprocess.CalledProcessError as e:
+            print(typer.style("failed", fg=typer.colors.RED))
             logger.error(f"Failed to initialize git repository: {e}")
             raise typer.Exit(1)
 
-    # Seamless URL generation (tiered approach)
+    # ─────────────────────────────────────────────────────────────────────────
+    # Remote URL configuration
+    # ─────────────────────────────────────────────────────────────────────────
     remote_url = None
 
     # Tier 1: Try GitHub CLI first (most seamless)
     if _check_gh_cli_available():
         username = _get_github_username_from_gh()
         if username:
+            print(f"\nGitHub CLI detected (user: {username})")
             default_repo_name = "calendar-sync-calendars"
-            typer.echo(f"\nGitHub CLI detected.")
-            response = typer.prompt(f"Repository name", default=default_repo_name)
+            response = typer.prompt("Repository name", default=default_repo_name)
 
             repo_name = response if response else default_repo_name
-
             full_repo_name = f"{username}/{repo_name}"
-            typer.echo(f"Creating repository '{full_repo_name}'...")
+
+            print(f"\n  Creating GitHub repository...", end=" ", flush=True)
             if _create_repo_with_gh(username, repo_name, calendar_dir):
                 remote_url = f"https://github.com/{username}/{repo_name}.git"
-                typer.echo(f"Repository created and remote configured: {remote_url}")
+                print(typer.style("done", fg=typer.colors.GREEN))
 
     # Tier 2: Manual fallback
     if not remote_url:
-        typer.echo("\nCould not auto-detect GitHub settings.")
+        print("\nCould not auto-detect GitHub settings.")
         manual_url = typer.prompt(
             "Enter GitHub repository URL (or press Enter to skip)",
             default="",
@@ -96,6 +109,7 @@ def git_setup(
 
     # Set up remote if we have a URL
     if remote_url:
+        print("  Configuring remote...", end=" ", flush=True)
         try:
             # Remove existing remote if it exists
             subprocess.run(
@@ -111,20 +125,19 @@ def git_setup(
                 check=True,
                 capture_output=True,
             )
-            typer.echo(f"Remote 'origin' configured: {remote_url}")
+            print(typer.style("done", fg=typer.colors.GREEN))
 
             # Save to .env file
             _write_to_env_file("CALENDAR_GIT_REMOTE_URL", remote_url)
-            typer.echo("Remote URL saved to .env file")
         except subprocess.CalledProcessError as e:
+            print(typer.style("failed", fg=typer.colors.RED))
             logger.warning(f"Failed to set remote: {e}")
-            typer.echo(
-                "Warning: Could not configure remote. You can set it manually later."
-            )
+            print("  Warning: Could not configure remote. Set it manually later.")
 
-    # Create initial commit if calendar files exist
+    # ─────────────────────────────────────────────────────────────────────────
+    # Initial commit
+    # ─────────────────────────────────────────────────────────────────────────
     if calendar_dir.exists():
-        # Check if there are any files to commit
         result = subprocess.run(
             ["git", "status", "--porcelain"],
             cwd=calendar_dir,
@@ -133,6 +146,7 @@ def git_setup(
             check=False,
         )
         if result.stdout.strip():
+            print("  Creating initial commit...", end=" ", flush=True)
             try:
                 subprocess.run(
                     ["git", "add", "."],
@@ -146,19 +160,22 @@ def git_setup(
                     check=True,
                     capture_output=True,
                 )
-                typer.echo("Initial commit created.")
+                print(typer.style("done", fg=typer.colors.GREEN))
             except subprocess.CalledProcessError as e:
+                print(typer.style("skipped", fg=typer.colors.YELLOW))
                 logger.warning(f"Failed to create initial commit: {e}")
 
-    typer.echo("\nGit setup complete!")
+    # ─────────────────────────────────────────────────────────────────────────
+    # Summary
+    # ─────────────────────────────────────────────────────────────────────────
+    print(f"\n{typer.style('Setup complete', bold=True)}")
     if remote_url:
-        typer.echo(f"Remote repository: {remote_url}")
-        typer.echo(
-            "You can now use 'calendar-sync publish' to push calendars to the remote."
-        )
+        print(f"  Remote: {remote_url}")
+        print("\nYou can now use 'calsync push' to push calendars.")
     else:
-        typer.echo("No remote configured. You can set one up later with:")
-        typer.echo("  git remote add origin <repository-url>")
+        print("  No remote configured.")
+        print("\nTo add a remote later:")
+        print("  git remote add origin <repository-url>")
 
 
 def _check_gh_cli_available() -> bool:
@@ -229,10 +246,17 @@ def _create_repo_with_gh(username: str, repo_name: str, calendar_dir: Path) -> b
 
 def _delete_git_repository(calendar_dir: Path) -> None:
     """Delete local and remote git repository with confirmation."""
+    # ─────────────────────────────────────────────────────────────────────────
+    # Header
+    # ─────────────────────────────────────────────────────────────────────────
+    print(f"\n{'━' * 40}")
+    print(typer.style("  Git Repository Deletion", bold=True))
+    print(f"{'━' * 40}")
+
     # Check if git repo exists
     git_dir = calendar_dir / ".git"
     if not git_dir.exists():
-        typer.echo(f"No git repository found in {calendar_dir}")
+        print(f"\nNo git repository found in {calendar_dir}")
         return
 
     # Get remote URL if it exists
@@ -240,70 +264,71 @@ def _delete_git_repository(calendar_dir: Path) -> None:
     remote_url = git_service.get_remote_url()
 
     # Show what will be deleted
-    typer.echo("This will delete:")
-    typer.echo(f"  - Local git repository: {git_dir}")
+    print("\nThis will delete:")
+    print(f"  Local:  {git_dir}")
     if remote_url:
-        typer.echo(f"  - Remote repository: {remote_url}")
-        # Try to extract repo name for deletion
         repo_name = _extract_repo_name_from_url(remote_url)
+        print(f"  Remote: {remote_url}")
         if repo_name:
-            typer.echo(f"    (Repository: {repo_name})")
+            print(f"          ({repo_name})")
     else:
-        typer.echo("  - No remote repository configured")
+        print("  Remote: (none configured)")
 
     # Confirmation prompt
-    typer.echo()
+    print()
     if not typer.confirm("Are you sure you want to delete the git repository?"):
-        typer.echo("Deletion cancelled.")
+        print("Deletion cancelled.")
         return
 
-    # Delete remote repository if it exists
+    # ─────────────────────────────────────────────────────────────────────────
+    # Delete remote repository
+    # ─────────────────────────────────────────────────────────────────────────
+    print("\nDeleting...")
+
     if remote_url:
         repo_name = _extract_repo_name_from_url(remote_url)
         if repo_name and _check_gh_cli_available():
-            typer.echo(f"\nDeleting remote repository '{repo_name}'...")
+            print(f"  Deleting remote repository...", end=" ", flush=True)
             success, error_msg = _delete_remote_repo(repo_name)
             if success:
-                typer.echo(f"Remote repository '{repo_name}' deleted successfully.")
+                print(typer.style("done", fg=typer.colors.GREEN))
             else:
-                typer.echo(
-                    f"Warning: Could not delete remote repository '{repo_name}'."
-                )
+                print(typer.style("failed", fg=typer.colors.RED))
                 if error_msg:
-                    # Check for missing scope error
                     if (
                         "delete_repo" in error_msg.lower()
                         or "admin rights" in error_msg.lower()
                     ):
-                        typer.echo(
-                            "\nGitHub CLI needs the 'delete_repo' scope to delete repositories."
-                        )
-                        typer.echo("To fix this, run:")
-                        typer.echo("  gh auth refresh -h github.com -s delete_repo")
-                        typer.echo("\nThen try the deletion again.")
+                        print("\n  GitHub CLI needs 'delete_repo' scope. Run:")
+                        print("    gh auth refresh -h github.com -s delete_repo")
                     else:
-                        typer.echo(f"Error: {error_msg}")
-                typer.echo("\nYou can also delete it manually on GitHub if needed.")
+                        print(f"  Error: {error_msg}")
+                print("  Delete manually on GitHub if needed.")
         else:
-            typer.echo(f"\nRemote repository exists at {remote_url}")
-            typer.echo("Please delete it manually on GitHub if needed.")
+            print(f"  Remote: {remote_url}")
+            print("  (Delete manually on GitHub if needed)")
 
-    # Delete local .git directory
-    typer.echo(f"\nDeleting local git repository...")
+    # ─────────────────────────────────────────────────────────────────────────
+    # Delete local repository
+    # ─────────────────────────────────────────────────────────────────────────
+    print("  Deleting local repository...", end=" ", flush=True)
     try:
         shutil.rmtree(git_dir)
-        typer.echo(f"Local git repository deleted successfully.")
+        print(typer.style("done", fg=typer.colors.GREEN))
     except Exception as e:
+        print(typer.style("failed", fg=typer.colors.RED))
         logger.error(f"Failed to delete local git repository: {e}")
-        typer.echo(f"Error: Could not delete local git repository: {e}")
+        print(f"  Error: {e}")
         raise typer.Exit(1)
 
     # Remove remote URL from .env file if it exists
     if remote_url:
         _remove_from_env_file("CALENDAR_GIT_REMOTE_URL")
-        typer.echo("Remote URL removed from .env file")
 
-    typer.echo("\nGit repository deletion complete!")
+    # ─────────────────────────────────────────────────────────────────────────
+    # Summary
+    # ─────────────────────────────────────────────────────────────────────────
+    print(f"\n{typer.style('Deletion complete', bold=True)}")
 
 
 def _extract_repo_name_from_url(remote_url: str) -> str | None:

@@ -335,3 +335,122 @@ def test_parse_cell_events_with_am_pm_expansion():
     assert "start" not in events[0]  # All-day event
     assert "end" not in events[0]
     assert events[0]["type"] == "ccsc"
+
+
+def test_parse_cell_events_multiple_time_ranges():
+    """Test that events with multiple time ranges are split into separate events."""
+    from app.ingestion.word_reader import parse_cell_events, TypeMatcher
+
+    template = CalendarTemplate(
+        name="test",
+        version="1.0",
+        defaults=TemplateDefaults(),
+        types={
+            "ccsc": EventTypeConfig(match="ccsc"),
+            "clinic": EventTypeConfig(match="clinic"),
+        },
+    )
+
+    type_matcher = TypeMatcher(template)
+
+    # Test "CCSC 0730-1200 and 1230-1630" - should create 2 events
+    events = parse_cell_events(
+        "15 CCSC 0730-1200 and 1230-1630", month=1, year=2026, type_matcher=type_matcher
+    )
+    assert len(events) == 2
+    assert events[0]["title"] == "CCSC"
+    assert events[0]["date"] == "2026-01-15"
+    assert events[0]["start"] == "0730"
+    assert events[0]["end"] == "1200"
+    assert events[0]["type"] == "ccsc"
+    assert events[1]["title"] == "CCSC"
+    assert events[1]["date"] == "2026-01-15"
+    assert events[1]["start"] == "1230"
+    assert events[1]["end"] == "1630"
+    assert events[1]["type"] == "ccsc"
+
+    # Test with "&" conjunction
+    events = parse_cell_events(
+        "16 Clinic 0900-1100 & 1300-1500", month=1, year=2026, type_matcher=type_matcher
+    )
+    assert len(events) == 2
+    assert events[0]["title"] == "Clinic"
+    assert events[0]["start"] == "0900"
+    assert events[0]["end"] == "1100"
+    assert events[1]["title"] == "Clinic"
+    assert events[1]["start"] == "1300"
+    assert events[1]["end"] == "1500"
+
+    # Test with "+" conjunction
+    events = parse_cell_events(
+        "17 CCSC 0800-1000 + 1400-1600", month=1, year=2026, type_matcher=type_matcher
+    )
+    assert len(events) == 2
+    assert events[0]["title"] == "CCSC"
+    assert events[0]["start"] == "0800"
+    assert events[0]["end"] == "1000"
+    assert events[1]["title"] == "CCSC"
+    assert events[1]["start"] == "1400"
+    assert events[1]["end"] == "1600"
+
+    # Test without conjunction - should create single event
+    events = parse_cell_events(
+        "18 CCSC 0730-1200", month=1, year=2026, type_matcher=type_matcher
+    )
+    assert len(events) == 1
+    assert events[0]["title"] == "CCSC"
+    assert events[0]["start"] == "0730"
+    assert events[0]["end"] == "1200"
+
+
+def test_parse_cell_events_multiple_periods():
+    """Test that events like 'CCSC AM and PM' are split into separate events."""
+    from app.ingestion.word_reader import parse_cell_events, TypeMatcher
+
+    template = CalendarTemplate(
+        name="test",
+        version="1.0",
+        defaults=TemplateDefaults(
+            time_periods={"AM": ("0800", "1200"), "PM": ("1300", "1700")}
+        ),
+        types={
+            "ccsc": EventTypeConfig(
+                match="ccsc",
+                time_periods={"AM": ("0730", "1200"), "PM": ("1230", "1630")},
+            ),
+        },
+    )
+
+    type_matcher = TypeMatcher(template)
+
+    # Test "CCSC AM and PM" - should create 2 events
+    events = parse_cell_events(
+        "20 CCSC AM and PM", month=1, year=2026, type_matcher=type_matcher
+    )
+    assert len(events) == 2
+    assert events[0]["title"] == "CCSC"
+    assert events[0]["date"] == "2026-01-20"
+    assert events[0]["start"] == "0730"  # Type-specific AM
+    assert events[0]["end"] == "1200"
+    assert events[0]["type"] == "ccsc"
+    assert events[1]["title"] == "CCSC"
+    assert events[1]["date"] == "2026-01-20"
+    assert events[1]["start"] == "1230"  # Type-specific PM
+    assert events[1]["end"] == "1630"
+    assert events[1]["type"] == "ccsc"
+
+    # Test with "&" conjunction
+    events = parse_cell_events(
+        "21 CCSC AM & PM", month=1, year=2026, type_matcher=type_matcher
+    )
+    assert len(events) == 2
+    assert events[0]["start"] == "0730"
+    assert events[1]["start"] == "1230"
+
+    # Test with "+" conjunction
+    events = parse_cell_events(
+        "22 CCSC AM + PM", month=1, year=2026, type_matcher=type_matcher
+    )
+    assert len(events) == 2
+    assert events[0]["start"] == "0730"
+    assert events[1]["start"] == "1230"

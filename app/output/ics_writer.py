@@ -3,17 +3,36 @@
 import uuid
 from datetime import datetime, timedelta
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from icalendar import Alarm, Calendar, Event, vGeo, vText
 
+from app.exceptions import ExportError
 from app.models.metadata import CalendarWithMetadata
+
+if TYPE_CHECKING:
+    from app.models.template import CalendarTemplate
 
 
 class ICSWriter:
     """Writer for ICS calendar files."""
 
-    def write(self, calendar_with_metadata: CalendarWithMetadata, path: Path) -> None:
-        """Write calendar to ICS file."""
+    def write(
+        self,
+        calendar_with_metadata: CalendarWithMetadata,
+        path: Path,
+        template: "CalendarTemplate | None" = None,
+    ) -> None:
+        """Write calendar to ICS file.
+        
+        Args:
+            calendar_with_metadata: Calendar with metadata to write
+            path: Path to write ICS file
+            template: Optional template for resolving location_id references
+            
+        Raises:
+            ExportError: If location_id references a non-existent location in template
+        """
         calendar = calendar_with_metadata.calendar
         metadata = calendar_with_metadata.metadata
 
@@ -39,28 +58,56 @@ class ICSWriter:
             event.add("uid", str(uuid.uuid4()))
             event.add("dtstamp", datetime.now())
 
+            # Resolve location - either from location_id or direct location field
+            location = event_model.location
+            location_geo = event_model.location_geo
+            location_apple_title = event_model.location_apple_title
+            
+            if event_model.location_id:
+                # Resolve location_id from template
+                if template is None:
+                    raise ExportError(
+                        f"Event '{event_model.title}' has location_id='{event_model.location_id}' "
+                        f"but no template was provided for resolution. "
+                        f"Either provide a template or use the 'location' field directly."
+                    )
+                
+                location_config = template.locations.get(event_model.location_id)
+                if location_config is None:
+                    available = ", ".join(template.locations.keys()) or "(none)"
+                    raise ExportError(
+                        f"Event '{event_model.title}' references location_id='{event_model.location_id}' "
+                        f"but this location is not defined in template '{template.name}'. "
+                        f"Available locations: {available}"
+                    )
+                
+                # Use resolved location data
+                location = location_config.address
+                location_geo = location_config.geo
+                location_apple_title = location_config.apple_title
+
             # Add location if present
-            if event_model.location:
-                # Add geo information if available in event
-                if event_model.location_geo and event_model.location_apple_title:
+            if location:
+                # Add geo information if available
+                if location_geo and location_apple_title:
                     # Use vText to ensure proper escaping of newlines
                     combined_location = (
-                        event_model.location_apple_title + "\n" + event_model.location
+                        location_apple_title + "\n" + location
                     )
                     event["LOCATION"] = vText(combined_location)
-                    event.add("geo", event_model.location_geo)
+                    event.add("geo", location_geo)
                     event.add(
                         "X-APPLE-STRUCTURED-LOCATION",
-                        f"geo:{event_model.location_geo[0]},{event_model.location_geo[1]}",
+                        f"geo:{location_geo[0]},{location_geo[1]}",
                         parameters={
                             "VALUE": "URI",
-                            "X-ADDRESS": event_model.location,
+                            "X-ADDRESS": location,
                             "X-APPLE-RADIUS": "49",
-                            "X-TITLE": event_model.location_apple_title,
+                            "X-TITLE": location_apple_title,
                         },
                     )
                 else:
-                    event.add("location", event_model.location)
+                    event.add("location", location)
 
             # Convert time objects back to datetime
             date = datetime.combine(event_model.date, datetime.min.time())

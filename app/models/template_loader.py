@@ -53,9 +53,19 @@ def _merge_template_data(base_data: dict, extending_data: dict) -> dict:
             },
         }
 
-    # Merge types (extending types override base types)
+    # Merge types (deep merge - extending type configs merge with base type configs)
     if "types" in extending_data:
-        merged["types"] = {**base_data.get("types", {}), **extending_data["types"]}
+        base_types = base_data.get("types", {})
+        extending_types = extending_data["types"]
+        merged_types = {**base_types}
+        for type_name, type_config in extending_types.items():
+            if type_name in merged_types:
+                # Deep merge: base config + extending config overrides
+                merged_types[type_name] = {**merged_types[type_name], **type_config}
+            else:
+                # New type not in base
+                merged_types[type_name] = type_config
+        merged["types"] = merged_types
 
     # Override name and version from extending template
     if "name" in extending_data:

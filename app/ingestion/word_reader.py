@@ -69,6 +69,24 @@ class TypeMatcher:
 
         return (None, None)
 
+    def should_suppress(self, type_name: str | None) -> bool:
+        """Check if the given type should be suppressed during ingestion."""
+        if type_name is None:
+            return False
+        type_config = self.template.types.get(type_name)
+        if type_config is None:
+            return False
+        return type_config.suppress
+
+    def get_busy(self, type_name: str | None) -> bool:
+        """Get the busy flag for the given type (default True)."""
+        if type_name is None:
+            return True
+        type_config = self.template.types.get(type_name)
+        if type_config is None:
+            return True
+        return type_config.busy
+
     def resolve_time_periods(
         self, text: str, type_name: str | None
     ) -> tuple[str | None, str | None]:
@@ -160,6 +178,83 @@ def extract_revised_date(doc: Document) -> date | None:
     return None
 
 
+def extract_time_ranges(text: str) -> list[tuple[str, str, str]] | None:
+    """
+    Extract multiple time ranges from text like "CCSC 0730-1200 and 1230-1630".
+    
+    Returns:
+        List of (start, end, connector) tuples if multiple ranges found, None otherwise.
+        Connector is the text between ranges (e.g., "and", "&", "+").
+    """
+    # Pattern: Find all HHMM-HHMM time ranges
+    time_range_pattern = r'(\d{4})-(\d{4})'
+    matches = list(re.finditer(time_range_pattern, text))
+    
+    if len(matches) < 2:
+        return None
+    
+    # Extract the ranges and check for conjunctions between them
+    ranges = []
+    for i, match in enumerate(matches):
+        start = match.group(1)
+        end = match.group(2)
+        
+        # Check if there's a conjunction before the next range
+        if i < len(matches) - 1:
+            between_start = match.end()
+            between_end = matches[i + 1].start()
+            between_text = text[between_start:between_end].strip()
+            
+            # Check for conjunction patterns (word boundaries don't work with & and +)
+            if re.search(r'(\band\b|&|\+)', between_text, re.IGNORECASE):
+                ranges.append((start, end, between_text))
+            else:
+                # No conjunction found, not a multi-range event
+                return None
+        else:
+            # Last range
+            ranges.append((start, end, ""))
+    
+    return ranges if len(ranges) >= 2 else None
+
+
+def extract_time_periods(text: str) -> list[str] | None:
+    """
+    Extract multiple time periods (AM/PM) from text like "CCSC AM and PM".
+    
+    Returns:
+        List of period strings if multiple periods found with conjunctions, None otherwise.
+    """
+    # Find AM/PM occurrences
+    period_pattern = r'\b(AM|PM)\b'
+    matches = list(re.finditer(period_pattern, text, re.IGNORECASE))
+    
+    if len(matches) < 2:
+        return None
+    
+    # Check if there's a conjunction between periods
+    periods = []
+    for i, match in enumerate(matches):
+        period = match.group(1).upper()
+        
+        if i < len(matches) - 1:
+            between_start = match.end()
+            between_end = matches[i + 1].start()
+            between_text = text[between_start:between_end].strip()
+            
+            # Check for conjunction patterns (word boundaries don't work with & and +)
+            if re.search(r'(\band\b|&|\+)', between_text, re.IGNORECASE):
+                periods.append(period)
+            else:
+                # No conjunction found
+                return None
+        else:
+            # Last period
+            periods.append(period)
+    
+    return periods if len(periods) >= 2 else None
+
+
 def parse_cell_events(
     cell_text: str, month: int, year: int, type_matcher: TypeMatcher | None = None
 ) -> List[dict]:
@@ -194,6 +289,35 @@ def parse_cell_events(
             ev = part.strip()
             if not ev:
                 continue
+            
+            # Check for multiple time ranges first (e.g., "CCSC 0730-1200 and 1230-1630")
+            multi_ranges = extract_time_ranges(ev)
+            if multi_ranges:
+                # Extract title (everything before the first time range)
+                m_title = re.match(r"(.+?)\s+\d{4}-\d{4}", ev)
+                title = m_title.group(1).strip() if m_title else ev
+                
+                # Create separate events for each time range
+                for start, end, _ in multi_ranges:
+                    event_dict = {
+                        "title": title,
+                        "start": start,
+                        "end": end,
+                        "date": date_str,
+                    }
+                    
+                    # Apply template matching if available
+                    if type_matcher:
+                        type_name, label = type_matcher.match_type(title)
+                        if type_name:
+                            event_dict["type"] = type_name
+                            event_dict["busy"] = type_matcher.get_busy(type_name)
+                        if label:
+                            event_dict["label"] = label
+                    
+                    events.append(event_dict)
+                continue
+            
             # If there's a time range like "Endo 1230-1630" or "Clinic 1230-1630 with Carmen"
             m_time = re.match(r"(.+?)\s+(\d{4})-(\d{4})(?:\s+(.+))?", ev)
             if m_time:
@@ -219,6 +343,7 @@ def parse_cell_events(
                     if type_name:
                         # Use template type name directly (user-defined, no enum conversion)
                         event_dict["type"] = type_name
+                        event_dict["busy"] = type_matcher.get_busy(type_name)
                     if label:
                         event_dict["label"] = label
 
@@ -233,6 +358,37 @@ def parse_cell_events(
 
                 events.append(event_dict)
             else:
+                # Check for multiple time periods (e.g., "CCSC AM and PM")
+                multi_periods = extract_time_periods(ev)
+                if multi_periods and type_matcher:
+                    # Extract base title (remove AM/PM indicators)
+                    title = re.sub(r'\s+(AM|PM)\s+(and|&|\+)\s+(AM|PM).*', '', ev, flags=re.IGNORECASE).strip()
+                    title = re.sub(r'\s+(AM|PM)$', '', title, flags=re.IGNORECASE).strip()
+                    
+                    # Apply template matching
+                    type_name, label = type_matcher.match_type(ev)
+                    
+                    # Create separate events for each period
+                    for period in multi_periods:
+                        period_start, period_end = type_matcher.resolve_time_periods(
+                            period, type_name
+                        )
+                        
+                        if period_start and period_end:
+                            event_dict = {
+                                "title": title,
+                                "start": period_start,
+                                "end": period_end,
+                                "date": date_str,
+                            }
+                            if type_name:
+                                event_dict["type"] = type_name
+                                event_dict["busy"] = type_matcher.get_busy(type_name)
+                            if label:
+                                event_dict["label"] = label
+                            events.append(event_dict)
+                    continue
+                
                 # All-day or untimed event
                 event_dict = {"title": ev, "date": date_str}
 
@@ -242,6 +398,7 @@ def parse_cell_events(
                     if type_name:
                         # Use template type name directly (user-defined, no enum conversion)
                         event_dict["type"] = type_name
+                        event_dict["busy"] = type_matcher.get_busy(type_name)
                     if label:
                         event_dict["label"] = label
 
@@ -390,9 +547,15 @@ class WordReader:
             )
         ]
 
-        # Convert to Pydantic Event models
+        # Convert to Pydantic Event models, filtering suppressed types
         event_models = []
+        suppressed_count = 0
         for event_dict in events:
+            # Check if this event type should be suppressed
+            if type_matcher and type_matcher.should_suppress(event_dict.get("type")):
+                suppressed_count += 1
+                logger.debug(f"Suppressing event: {event_dict.get('title')}")
+                continue
             try:
                 event_models.append(Event(**event_dict))
             except Exception as e:
@@ -400,6 +563,8 @@ class WordReader:
                     f"Failed to create event from {event_dict}: {e}"
                 ) from e
 
+        if suppressed_count > 0:
+            logger.info(f"Suppressed {suppressed_count} events based on template rules")
         logger.info(f"Created {len(event_models)} event models from Word document")
 
         # Validate single year
