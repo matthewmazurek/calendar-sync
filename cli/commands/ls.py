@@ -85,11 +85,11 @@ def _list_calendars(
         else:
             config_display = "-"
 
-        # Get last updated from metadata
+        # Get last updated from calendar
         last_updated = None
-        metadata = repository.load_metadata(cal_id)
-        if metadata:
-            last_updated = metadata.last_updated
+        calendar = repository.load_calendar(cal_id)
+        if calendar:
+            last_updated = calendar.last_updated
 
         # Get display name and created date from settings
         settings = repository.load_settings(cal_id)

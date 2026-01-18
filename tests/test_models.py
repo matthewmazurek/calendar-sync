@@ -1,13 +1,12 @@
 """Tests for Pydantic models."""
 
-from datetime import date, time
+from datetime import date, datetime, time
 
 import pytest
 
-from app.exceptions import InvalidYearError, ValidationError
 from app.models.calendar import Calendar
 from app.models.event import Event
-from app.models.metadata import CalendarMetadata, CalendarWithMetadata
+from app.processing.merge_strategies import infer_year
 
 
 def test_event_creation():
@@ -60,48 +59,78 @@ def test_event_computed_fields():
     assert event3.is_overnight is True
 
 
-def test_calendar_year_validation():
-    """Test calendar year validation."""
-    # Single year calendar
+def test_event_uid():
+    """Test event uid field."""
+    event = Event(
+        title="Test Event",
+        date=date(2025, 1, 1),
+        uid="test-uid-123",
+    )
+    assert event.uid == "test-uid-123"
+    
+    # uid is optional
+    event2 = Event(title="No UID", date=date(2025, 1, 1))
+    assert event2.uid is None
+
+
+def test_infer_year_single_year():
+    """Test year inference with single year events."""
     events = [
         Event(title="Event 1", date=date(2025, 1, 1)),
         Event(title="Event 2", date=date(2025, 2, 1)),
     ]
-    calendar = Calendar(events=events, year=2025)
-    assert calendar.year == 2025
+    assert infer_year(events) == 2025
 
-    # Multi-year calendar should fail validation
-    events_multi = [
+
+def test_infer_year_multi_year():
+    """Test year inference with multi-year events."""
+    events = [
         Event(title="Event 1", date=date(2025, 1, 1)),
         Event(title="Event 2", date=date(2026, 1, 1)),
     ]
-    with pytest.raises(ValueError):
-        Calendar(events=events_multi, year=2025)
+    assert infer_year(events) is None
 
 
-def test_calendar_metadata():
-    """Test calendar metadata."""
-    from datetime import datetime
-
-    metadata = CalendarMetadata(
-        name="test_calendar",
-        created=datetime.now(),
-        last_updated=datetime.now(),
-    )
-    assert metadata.name == "test_calendar"
+def test_infer_year_empty():
+    """Test year inference with no events."""
+    assert infer_year([]) is None
 
 
-def test_calendar_with_metadata():
-    """Test calendar with metadata wrapper."""
-    from datetime import datetime
-
+def test_calendar_creation():
+    """Test unified calendar creation."""
+    now = datetime.now()
     events = [Event(title="Event 1", date=date(2025, 1, 1))]
-    calendar = Calendar(events=events)
-    metadata = CalendarMetadata(
-        name="test",
-        created=datetime.now(),
-        last_updated=datetime.now(),
+    
+    calendar = Calendar(
+        events=events,
+        name="test_calendar",
+        created=now,
+        last_updated=now,
     )
-    wrapper = CalendarWithMetadata(calendar=calendar, metadata=metadata)
-    assert wrapper.calendar == calendar
-    assert wrapper.metadata == metadata
+    
+    assert calendar.name == "test_calendar"
+    assert len(calendar.events) == 1
+    assert calendar.created == now
+    assert calendar.last_updated == now
+
+
+def test_calendar_metadata_fields():
+    """Test calendar metadata fields."""
+    now = datetime.now()
+    events = [Event(title="Event 1", date=date(2025, 1, 1))]
+    
+    calendar = Calendar(
+        events=events,
+        name="test_calendar",
+        created=now,
+        last_updated=now,
+        source="test_source",
+        source_revised_at=date(2025, 1, 15),
+        template_name="default",
+        template_version="1.0",
+    )
+    
+    assert calendar.source == "test_source"
+    assert calendar.source_revised_at == date(2025, 1, 15)
+    assert calendar.template_name == "default"
+    assert calendar.template_version == "1.0"

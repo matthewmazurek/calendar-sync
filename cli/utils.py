@@ -7,7 +7,7 @@ import typer
 from cli.display.console import console
 
 if TYPE_CHECKING:
-    from app.models.metadata import CalendarWithMetadata
+    from app.models.calendar import Calendar
     from app.storage.calendar_repository import CalendarRepository
 
 
@@ -28,7 +28,7 @@ def confirm_or_exit(prompt: str = "Continue?", force: bool = False) -> None:
 def require_calendar_with_data(
     repository: "CalendarRepository",
     name: str,
-) -> "CalendarWithMetadata":
+) -> "Calendar":
     """Load a calendar, ensuring it exists and has data.
 
     Checks that:
@@ -40,7 +40,7 @@ def require_calendar_with_data(
         name: Calendar name
 
     Returns:
-        CalendarWithMetadata if found
+        Calendar if found
 
     Raises:
         typer.Exit(1): If calendar doesn't exist or has no data
@@ -51,12 +51,12 @@ def require_calendar_with_data(
         raise typer.Exit(1)
 
     # Check if calendar has data (has data.json)
-    calendar_with_metadata = repository.load_calendar(name)
-    if calendar_with_metadata is None:
+    calendar = repository.load_calendar(name)
+    if calendar is None:
         console.print(
             f"\n[yellow]Calendar '{name}' has no data.[/yellow]\n"
             f"Run [cyan]calsync ingest {name} <source>[/cyan] to add events."
         )
         raise typer.Exit(1)
 
-    return calendar_with_metadata
+    return calendar

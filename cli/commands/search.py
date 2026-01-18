@@ -64,8 +64,7 @@ def search(
         logger.error("Please provide a search query, --type, or --location")
         raise typer.Exit(1)
 
-    calendar_with_metadata = require_calendar_with_data(repository, name)
-    calendar = calendar_with_metadata.calendar
+    calendar = require_calendar_with_data(repository, name)
     cal_query = CalendarQuery(calendar)
     renderer = RichEventRenderer()
 

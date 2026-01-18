@@ -124,8 +124,7 @@ def create_app():
 
             # Read source calendar
             try:
-                ingestion_result = reader.read(temp_path)
-                source_calendar = ingestion_result.calendar
+                raw_ingestion = reader.read(temp_path)
             except (IngestionError, InvalidYearError) as e:
                 return handle_error(e)
 
@@ -135,14 +134,12 @@ def create_app():
             if existing is None:
                 # Create new calendar
                 try:
-                    result, processing_summary = manager.create_calendar_from_source(
-                        source_calendar, calendar_name
-                    )
+                    result = manager.create_calendar(calendar_name, raw_ingestion)
                 except InvalidYearError as e:
                     return handle_error(e)
 
                 # Save calendar (stores as JSON, exports to ICS)
-                filepath = repository.save_calendar(result.calendar, result.metadata)
+                filepath = repository.save(result.calendar)
 
                 # Publish to git if requested
                 published = False
@@ -157,7 +154,7 @@ def create_app():
                             "calendar_name": calendar_name,
                             "action": "created",
                             "events_count": len(result.calendar.events),
-                            "processing_summary": processing_summary,
+                            "processing_summary": result.processing_summary,
                             "filepath": str(filepath),
                             "published": published,
                         }
@@ -166,33 +163,32 @@ def create_app():
                 )
             else:
                 # Compose with existing calendar - requires year
+                from app.processing.merge_strategies import ReplaceByYear
+
                 if year is None:
-                    # Try to determine year from source calendar
-                    if source_calendar.year is None:
-                        years = {event.date.year for event in source_calendar.events}
-                        if len(years) != 1:
-                            return (
-                                jsonify(
-                                    {
-                                        "error": f"Source calendar contains events from multiple years: {years}. Please specify year parameter when updating an existing calendar.",
-                                        "type": "InvalidYearError",
-                                    }
-                                ),
-                                400,
-                            )
-                        year = years.pop()
-                    else:
-                        year = source_calendar.year
+                    # Try to determine year from source events
+                    years = {event.date.year for event in raw_ingestion.events}
+                    if len(years) != 1:
+                        return (
+                            jsonify(
+                                {
+                                    "error": f"Source calendar contains events from multiple years: {years}. Please specify year parameter when updating an existing calendar.",
+                                    "type": "InvalidYearError",
+                                }
+                            ),
+                            400,
+                        )
+                    year = years.pop()
 
                 try:
-                    result, processing_summary = manager.compose_calendar_with_source(
-                        calendar_name, source_calendar, year, repository
+                    result = manager.update_calendar(
+                        calendar_name, raw_ingestion, ReplaceByYear(year)
                     )
                 except (CalendarNotFoundError, InvalidYearError) as e:
                     return handle_error(e)
 
                 # Save updated calendar (stores as JSON, exports to ICS)
-                filepath = repository.save_calendar(result.calendar, result.metadata)
+                filepath = repository.save(result.calendar)
 
                 # Publish to git if requested
                 published = False
@@ -208,7 +204,7 @@ def create_app():
                             "action": "updated",
                             "year": year,
                             "events_count": len(result.calendar.events),
-                            "processing_summary": processing_summary,
+                            "processing_summary": result.processing_summary,
                             "filepath": str(filepath),
                             "published": published,
                         }
@@ -229,8 +225,8 @@ def create_app():
     def get_calendar(calendar_name: str):
         """Get a calendar by name (always returns ICS format)."""
         try:
-            calendar_with_metadata = repository.load_calendar(calendar_name)
-            if calendar_with_metadata is None:
+            calendar = repository.load_calendar(calendar_name)
+            if calendar is None:
                 return (
                     jsonify(
                         {
@@ -243,19 +239,18 @@ def create_app():
 
             # Get template for resolving location_id references
             template = None
-            metadata = calendar_with_metadata.metadata
-            if metadata.template_name:
+            if calendar.template_name:
                 try:
-                    template = get_template(metadata.template_name, config.template_dir)
+                    template = get_template(calendar.template_name, config.template_dir)
                 except FileNotFoundError:
-                    logger.warning(f"Template '{metadata.template_name}' not found")
+                    logger.warning(f"Template '{calendar.template_name}' not found")
 
             # Export to ICS format
             writer = get_ics_writer()
 
             # Write to temp file to get bytes
             with temp_file_path(suffix=".ics") as temp_path:
-                writer.write(calendar_with_metadata, temp_path, template=template)
+                writer.write_calendar(calendar, temp_path, template=template)
                 content = temp_path.read_bytes()
 
                 return Response(
@@ -278,23 +273,23 @@ def create_app():
             )
             calendars = repository.list_calendars(include_deleted=include_deleted)
 
-            # Get metadata for each calendar
+            # Get info for each calendar
             calendar_list = []
             for cal_name in calendars:
-                # Try to load metadata
-                metadata = repository.load_metadata(cal_name)
-                if metadata:
+                # Try to load calendar to get metadata
+                calendar = repository.load_calendar(cal_name)
+                if calendar:
                     calendar_list.append(
                         {
                             "name": cal_name,
                             "created": (
-                                metadata.created.isoformat()
-                                if metadata.created
+                                calendar.created.isoformat()
+                                if calendar.created
                                 else None
                             ),
                             "last_updated": (
-                                metadata.last_updated.isoformat()
-                                if metadata.last_updated
+                                calendar.last_updated.isoformat()
+                                if calendar.last_updated
                                 else None
                             ),
                         }

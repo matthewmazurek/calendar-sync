@@ -23,6 +23,9 @@ class Event(BaseModel):
     type: str | None = None
     label: str | None = None
     busy: bool = True
+    
+    # Unique identifier (from ICS UID, or generated) - used for UpsertById strategy
+    uid: str | None = None
 
     @field_validator("start", "end", mode="before")
     @classmethod

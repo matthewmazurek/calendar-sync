@@ -37,10 +37,8 @@ def info(
         console.print(f"\n[red]Calendar '{name}' not found[/red]")
         raise typer.Exit(1)
 
-    # Load calendar with metadata (data.json) - may not exist if never ingested
-    calendar_with_metadata = repository.load_calendar(name)
-    calendar = calendar_with_metadata.calendar if calendar_with_metadata else None
-    metadata = calendar_with_metadata.metadata if calendar_with_metadata else None
+    # Load calendar (data.json) - may not exist if never ingested
+    calendar = repository.load_calendar(name)
 
     # ─────────────────────────────────────────────────────────────────────────
     # Header
@@ -48,7 +46,7 @@ def info(
     display_name = settings.name or name
     console.print()
     console.print("━" * 60)
-    console.print(f"[bold]  Calendar: {display_name}[/bold]")
+    console.print(f"[bold]  Calendar: {name}[/bold]")
     console.print("━" * 60)
 
     # ─────────────────────────────────────────────────────────────────────────
@@ -77,13 +75,13 @@ def info(
     # ─────────────────────────────────────────────────────────────────────────
     console.print("\n[bold cyan]Ingestion Info[/bold cyan]")
 
-    if metadata:
+    if calendar:
         ingest_table = Table(show_header=False, box=None, padding=(0, 2))
         ingest_table.add_column("Label", style="dim", width=18)
         ingest_table.add_column("Value")
 
         # Calculate date range from events
-        if calendar and calendar.events:
+        if calendar.events:
             dates = [event.date for event in calendar.events]
             min_date = min(dates)
             max_date = max(dates)
@@ -95,15 +93,15 @@ def info(
 
         ingest_table.add_row("Events", event_count)
         ingest_table.add_row("Date range", date_range)
-        if metadata.source_revised_at:
+        if calendar.source_revised_at:
             ingest_table.add_row(
-                "Source revised", format_datetime(metadata.source_revised_at)
+                "Source revised", format_datetime(calendar.source_revised_at)
             )
-        ingest_table.add_row("Last updated", format_datetime(metadata.last_updated))
-        if metadata.template_name:
-            template_info = metadata.template_name
-            if metadata.template_version:
-                template_info += f" v{metadata.template_version}"
+        ingest_table.add_row("Last updated", format_datetime(calendar.last_updated))
+        if calendar.template_name:
+            template_info = calendar.template_name
+            if calendar.template_version:
+                template_info += f" v{calendar.template_version}"
             ingest_table.add_row("Applied template", template_info)
 
         # Data file (canonical storage)

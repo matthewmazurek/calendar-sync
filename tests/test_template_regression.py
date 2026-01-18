@@ -9,10 +9,22 @@ import pytest
 from app.config import CalendarConfig
 from app.ingestion.ics_reader import ICSReader
 from app.ingestion.word_reader import WordReader
-from app.models.metadata import CalendarMetadata, CalendarWithMetadata
+from app.models.calendar import Calendar
+from app.models.event import Event
 from app.models.template_loader import load_template
 from app.output.ics_writer import ICSWriter
 from app.processing.event_processor import process_events_with_template
+
+
+def make_calendar(events: list[Event], name: str = "test") -> Calendar:
+    """Helper to create a Calendar with default metadata."""
+    now = datetime.now()
+    return Calendar(
+        events=events,
+        name=name,
+        created=now,
+        last_updated=now,
+    )
 
 
 def normalize_event_for_comparison(event):
@@ -40,14 +52,14 @@ def test_template_word_reader_type_assignment():
     # Read with template
     reader = WordReader()
     ingestion_result = reader.read(fixture_path, template)
-    calendar = ingestion_result.calendar
+    raw = ingestion_result.raw
 
     # Check that some events have types assigned
-    events_with_types = [e for e in calendar.events if e.type is not None]
+    events_with_types = [e for e in raw.events if e.type is not None]
     assert len(events_with_types) > 0
 
     # Check that on-call events have labels
-    on_call_events = [e for e in calendar.events if e.type == "on_call"]
+    on_call_events = [e for e in raw.events if e.type == "on_call"]
     if on_call_events:
         events_with_labels = [e for e in on_call_events if e.label is not None]
         # At least some on-call events should have labels
@@ -69,40 +81,35 @@ def test_end_to_end_template_vs_expected_ics():
     # Read and process with template
     word_reader = WordReader()
     ingestion_result = word_reader.read(docx_path, template)
-    source_calendar = ingestion_result.calendar
-    processed_events, _ = process_events_with_template(source_calendar.events, template)
-    processed_calendar = source_calendar.model_copy(update={"events": processed_events})
+    raw = ingestion_result.raw
+    processed_events, _ = process_events_with_template(raw.events, template)
+    
+    # Create processed calendar
+    processed_calendar = make_calendar(processed_events, name="regression_test")
+    processed_calendar.source_revised_at = raw.revised_at
 
     # Write to temporary ICS file
     with tempfile.NamedTemporaryFile(suffix=".ics", delete=False) as tmp_file:
         tmp_path = Path(tmp_file.name)
         try:
-            metadata = CalendarMetadata(
-                name="regression_test",
-                created=datetime.now(),
-                last_updated=datetime.now(),
-            )
-            calendar_with_metadata = CalendarWithMetadata(
-                calendar=processed_calendar, metadata=metadata
-            )
             writer = ICSWriter()
             # Pass template for resolving location_id references
-            writer.write(calendar_with_metadata, tmp_path, template=template)
+            writer.write_calendar(processed_calendar, tmp_path, template=template)
 
             # Read both ICS files
             ics_reader = ICSReader()
             actual_result = ics_reader.read(tmp_path)
             expected_result = ics_reader.read(expected_ics_path)
-            actual_calendar = actual_result.calendar
-            expected_calendar = expected_result.calendar
+            actual_events = actual_result.raw.events
+            expected_events = expected_result.raw.events
 
             # Normalize events for comparison
             actual_normalized = sorted(
-                [normalize_event_for_comparison(e) for e in actual_calendar.events],
+                [normalize_event_for_comparison(e) for e in actual_events],
                 key=lambda x: (x["date"], x["title"]),
             )
             expected_normalized = sorted(
-                [normalize_event_for_comparison(e) for e in expected_calendar.events],
+                [normalize_event_for_comparison(e) for e in expected_events],
                 key=lambda x: (x["date"], x["title"]),
             )
 

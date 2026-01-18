@@ -47,8 +47,7 @@ def stats(
     repository = ctx.repository
     renderer = StatsRenderer()
 
-    calendar_with_metadata = require_calendar_with_data(repository, name)
-    calendar = calendar_with_metadata.calendar
+    calendar = require_calendar_with_data(repository, name)
 
     # Build statistics
     stats_data = build_calendar_statistics(

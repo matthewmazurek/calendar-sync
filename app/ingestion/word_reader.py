@@ -14,9 +14,8 @@ from docx import Document
 
 from app.exceptions import IngestionError, InvalidYearError
 from app.ingestion.summary import build_ingestion_summary
-from app.models.calendar import Calendar
 from app.models.event import Event
-from app.models.ingestion import IngestionResult
+from app.models.ingestion import IngestionResult, RawIngestion
 from app.models.template import CalendarTemplate, EventTypeConfig
 
 logger = logging.getLogger(__name__)
@@ -461,9 +460,9 @@ class WordReader:
         try:
             docx_path = normalize_to_docx(path)
             try:
-                calendar = self._read_docx(docx_path, template)
+                raw = self._read_docx(docx_path, template)
                 return IngestionResult(
-                    calendar=calendar, summary=build_ingestion_summary(calendar)
+                    raw=raw, summary=build_ingestion_summary(raw)
                 )
             finally:
                 # Clean up temporary docx file if it was created
@@ -475,7 +474,7 @@ class WordReader:
         except Exception as e:
             raise IngestionError(f"Failed to read Word document: {e}") from e
 
-    def _read_docx(self, docx_path: str, template: CalendarTemplate | None) -> Calendar:
+    def _read_docx(self, docx_path: str, template: CalendarTemplate | None) -> RawIngestion:
         """Read calendar from .docx file."""
         logger.info(f"Reading Word document: {docx_path}")
         if template:
@@ -567,7 +566,7 @@ class WordReader:
             logger.info(f"Suppressed {suppressed_count} events based on template rules")
         logger.info(f"Created {len(event_models)} event models from Word document")
 
-        # Validate single year
+        # Validate single year (Word documents are expected to be single-year schedules)
         years = {event.date.year for event in event_models}
         if len(years) > 1:
             raise InvalidYearError(
@@ -575,4 +574,4 @@ class WordReader:
                 "Word documents must contain events from a single year."
             )
 
-        return Calendar(events=event_models, revised_date=revised_date, year=year)
+        return RawIngestion(events=event_models, revised_at=revised_date)

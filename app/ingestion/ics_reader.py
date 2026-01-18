@@ -8,9 +8,8 @@ from icalendar import Calendar
 
 from app.exceptions import IngestionError
 from app.ingestion.summary import build_ingestion_summary
-from app.models.calendar import Calendar as CalendarModel
 from app.models.event import Event
-from app.models.ingestion import IngestionResult
+from app.models.ingestion import IngestionResult, RawIngestion
 
 logger = logging.getLogger(__name__)
 
@@ -24,27 +23,21 @@ class ICSReader:
         try:
             if not path.exists():
                 logger.warning(f"ICS file does not exist: {path}")
-                calendar = CalendarModel(events=[])
-                return IngestionResult(
-                    calendar=calendar, summary=build_ingestion_summary(calendar)
-                )
+                raw = RawIngestion(events=[])
+                return IngestionResult(raw=raw, summary=build_ingestion_summary(raw))
 
             # Check if file is empty
             if path.stat().st_size == 0:
                 logger.warning(f"ICS file is empty: {path}")
-                calendar = CalendarModel(events=[])
-                return IngestionResult(
-                    calendar=calendar, summary=build_ingestion_summary(calendar)
-                )
+                raw = RawIngestion(events=[])
+                return IngestionResult(raw=raw, summary=build_ingestion_summary(raw))
 
             with open(path, "r", encoding="utf-8") as f:
                 content = f.read()
                 if not content.strip():
                     logger.warning(f"ICS file contains only whitespace: {path}")
-                    calendar = CalendarModel(events=[])
-                    return IngestionResult(
-                        calendar=calendar, summary=build_ingestion_summary(calendar)
-                    )
+                    raw = RawIngestion(events=[])
+                    return IngestionResult(raw=raw, summary=build_ingestion_summary(raw))
                 cal = Calendar.from_ical(content)
         except Exception as e:
             raise IngestionError(f"Failed to read ICS file: {e}") from e
@@ -63,10 +56,8 @@ class ICSReader:
                         ) from e
 
         logger.info(f"Created {len(events)} events from ICS file")
-        calendar = CalendarModel(events=events)
-        return IngestionResult(
-            calendar=calendar, summary=build_ingestion_summary(calendar)
-        )
+        raw = RawIngestion(events=events)
+        return IngestionResult(raw=raw, summary=build_ingestion_summary(raw))
 
     def _ics_event_to_dict(self, vevent) -> dict | None:
         """Convert an ICS VEVENT component to event dictionary."""
@@ -74,6 +65,10 @@ class ICSReader:
         title = str(vevent.get("summary", ""))
         if not title:
             return None
+
+        # Extract UID (unique identifier for upsert matching)
+        uid = vevent.get("uid")
+        uid_str = str(uid) if uid else None
 
         # Extract location
         location = str(vevent.get("location", "")) if vevent.get("location") else None
@@ -125,6 +120,10 @@ class ICSReader:
             return None
 
         event_dict = {"title": title, "location": location}
+
+        # Add uid if present
+        if uid_str:
+            event_dict["uid"] = uid_str
 
         # Add geo data if present
         if geo:

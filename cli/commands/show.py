@@ -74,8 +74,7 @@ def show(
     ctx = get_context()
     repository = ctx.repository
 
-    calendar_with_metadata = require_calendar_with_data(repository, name)
-    calendar = calendar_with_metadata.calendar
+    calendar = require_calendar_with_data(repository, name)
     query = CalendarQuery(calendar)
     renderer = RichEventRenderer()
 

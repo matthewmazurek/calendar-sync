@@ -7,6 +7,7 @@ import typer
 from typing_extensions import Annotated
 
 from app.models.calendar import Calendar
+from app.models.event import Event
 from cli.context import get_context
 from cli.display.diff_renderer import DiffRenderer
 
@@ -93,33 +94,36 @@ def _get_calendar_at_version(
     """
     if commit is None:
         # Load working directory version
-        result = repository.load_calendar(name, format)
-        return result.calendar if result else None
+        return repository.load_calendar(name, format)
     else:
         # Load from git commit
-        result = repository.load_calendar_by_commit(name, commit, format)
-        return result.calendar if result else None
+        return repository.load_calendar_by_commit(name, commit, format)
 
 
 def _compute_diff(
-    old_calendar: Calendar | None,
-    new_calendar: Calendar | None,
+    old: Calendar | list[Event] | None,
+    new: Calendar | list[Event] | None,
 ) -> tuple[list, list, list]:
-    """Compute differences between two calendars.
+    """Compute differences between two calendars or event lists.
 
     Returns:
         Tuple of (added_events, removed_events, modified_events)
         modified_events is a list of (old_event, new_event) tuples
     """
-    if old_calendar is None:
+    # Handle Calendar objects or event lists
+    if old is None:
         old_events = []
+    elif isinstance(old, Calendar):
+        old_events = old.events
     else:
-        old_events = old_calendar.events
+        old_events = old
 
-    if new_calendar is None:
+    if new is None:
         new_events = []
+    elif isinstance(new, Calendar):
+        new_events = new.events
     else:
-        new_events = new_calendar.events
+        new_events = new
 
     # Create lookup by (date, title, start, end) as the primary key
     def event_key(e):
@@ -310,17 +314,17 @@ def diff(
 
 
 def display_diff(
-    old_calendar: Calendar | None,
-    new_calendar: Calendar | None,
+    old: Calendar | list[Event] | None,
+    new: Calendar | list[Event] | None,
     old_label: str = "before",
     new_label: str = "after",
     compact: bool = False,
 ) -> bool:
-    """Display differences between two calendars.
+    """Display differences between two calendars or event lists.
 
     Args:
-        old_calendar: Calendar before changes (or None)
-        new_calendar: Calendar after changes (or None)
+        old: Calendar or event list before changes (or None)
+        new: Calendar or event list after changes (or None)
         old_label: Label for the old version
         new_label: Label for the new version
         compact: If True, only show counts
@@ -328,7 +332,7 @@ def display_diff(
     Returns:
         True if there were differences, False otherwise
     """
-    added, removed, modified = _compute_diff(old_calendar, new_calendar)
+    added, removed, modified = _compute_diff(old, new)
     renderer = DiffRenderer()
     return renderer.render_diff(
         added,

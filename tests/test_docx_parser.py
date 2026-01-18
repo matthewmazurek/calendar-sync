@@ -8,12 +8,15 @@ import pytest
 
 from app.ingestion.word_reader import WordReader
 from app.models.event import Event
+from app.processing.merge_strategies import infer_year
 
 
 def normalize_text(s):
     # Replace curly apostrophes and quotes with straight ones
-    s = s.replace("’", "'").replace("‘", "'")
-    s = s.replace(""", '"').replace(""", '"')
+    # U+2018 LEFT SINGLE QUOTATION MARK, U+2019 RIGHT SINGLE QUOTATION MARK
+    s = s.replace("\u2018", "'").replace("\u2019", "'")
+    # U+201C LEFT DOUBLE QUOTATION MARK, U+201D RIGHT DOUBLE QUOTATION MARK
+    s = s.replace("\u201c", '"').replace("\u201d", '"')
     # Remove invisible/directional marks
     s = re.sub(r"[\u200e\u200f\u202a-\u202e]", "", s)
     # Collapse whitespace
@@ -29,8 +32,8 @@ def test_parse_example_calendar():
 
     reader = WordReader()
     ingestion_result = reader.read(fixture_path)
-    calendar = ingestion_result.calendar
-    events = calendar.events
+    raw = ingestion_result.raw
+    events = raw.events
 
     # Helper to find an event by date and title substring
     def has_event(date_str, title_substring, start_str=None, end_str=None):
@@ -76,11 +79,12 @@ def test_parser_extracts_year_from_document():
 
     reader = WordReader()
     ingestion_result = reader.read(fixture_path)
-    calendar = ingestion_result.calendar
+    raw = ingestion_result.raw
 
-    # Verify that calendar has year set
-    assert calendar.year == 2025
+    # Verify that year can be inferred from events
+    year = infer_year(raw.events)
+    assert year == 2025
 
     # Verify that all events are from 2025
-    for event in calendar.events:
+    for event in raw.events:
         assert event.date.year == 2025, f"Event date {event.date} should be from 2025"

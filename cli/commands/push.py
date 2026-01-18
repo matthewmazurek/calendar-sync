@@ -28,8 +28,8 @@ def push(
     # ─────────────────────────────────────────────────────────────────────────
     # Load and validate calendar
     # ─────────────────────────────────────────────────────────────────────────
-    calendar_with_metadata = repository.load_calendar(calendar_name)
-    if calendar_with_metadata is None:
+    calendar = repository.load_calendar(calendar_name)
+    if calendar is None:
         typer.echo(
             f"{typer.style('✗', fg=typer.colors.RED, bold=True)} Calendar '{calendar_name}' not found"
         )
@@ -45,7 +45,6 @@ def push(
     # ─────────────────────────────────────────────────────────────────────────
     # Header
     # ─────────────────────────────────────────────────────────────────────────
-    calendar = calendar_with_metadata.calendar
     event_count = len(calendar.events)
 
     print(f"\n{'━' * 40}")

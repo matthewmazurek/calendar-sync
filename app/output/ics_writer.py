@@ -5,10 +5,12 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from icalendar import Alarm, Calendar, Event, vGeo, vText
+from icalendar import Alarm
+from icalendar import Calendar as ICalendar
+from icalendar import Event, vGeo, vText
 
 from app.exceptions import ExportError
-from app.models.metadata import CalendarWithMetadata
+from app.models.calendar import Calendar
 
 if TYPE_CHECKING:
     from app.models.template import CalendarTemplate
@@ -17,32 +19,29 @@ if TYPE_CHECKING:
 class ICSWriter:
     """Writer for ICS calendar files."""
 
-    def write(
+    def write_calendar(
         self,
-        calendar_with_metadata: CalendarWithMetadata,
+        calendar: Calendar,
         path: Path,
         template: "CalendarTemplate | None" = None,
     ) -> None:
-        """Write calendar to ICS file.
-        
+        """Write unified calendar to ICS file.
+
         Args:
-            calendar_with_metadata: Calendar with metadata to write
+            calendar: Calendar to write
             path: Path to write ICS file
             template: Optional template for resolving location_id references
-            
+
         Raises:
             ExportError: If location_id references a non-existent location in template
         """
-        calendar = calendar_with_metadata.calendar
-        metadata = calendar_with_metadata.metadata
-
-        cal = Calendar()
+        cal = ICalendar()
         cal.add("prodid", "-//Calendar Sync//EN")
         cal.add("version", "2.0")
 
         # Build calendar name from metadata and revision date
-        base_name = metadata.name.title()
-        revised_date = calendar.revised_date or metadata.source_revised_at
+        base_name = calendar.name.title()
+        revised_date = calendar.source_revised_at
         if revised_date:
             calendar_name = f"{base_name} (Revised {revised_date})"
         else:
@@ -62,7 +61,7 @@ class ICSWriter:
             location = event_model.location
             location_geo = event_model.location_geo
             location_apple_title = event_model.location_apple_title
-            
+
             if event_model.location_id:
                 # Resolve location_id from template
                 if template is None:
@@ -71,7 +70,7 @@ class ICSWriter:
                         f"but no template was provided for resolution. "
                         f"Either provide a template or use the 'location' field directly."
                     )
-                
+
                 location_config = template.locations.get(event_model.location_id)
                 if location_config is None:
                     available = ", ".join(template.locations.keys()) or "(none)"
@@ -80,7 +79,7 @@ class ICSWriter:
                         f"but this location is not defined in template '{template.name}'. "
                         f"Available locations: {available}"
                     )
-                
+
                 # Use resolved location data
                 location = location_config.address
                 location_geo = location_config.geo
@@ -91,9 +90,7 @@ class ICSWriter:
                 # Add geo information if available
                 if location_geo and location_apple_title:
                     # Use vText to ensure proper escaping of newlines
-                    combined_location = (
-                        location_apple_title + "\n" + location
-                    )
+                    combined_location = location_apple_title + "\n" + location
                     event["LOCATION"] = vText(combined_location)
                     event.add("geo", location_geo)
                     event.add(

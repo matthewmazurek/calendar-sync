@@ -7,20 +7,20 @@ from icalendar import Calendar as ICalendar
 
 from app.models.calendar import Calendar
 from app.models.event import Event
-from app.models.metadata import CalendarMetadata, CalendarWithMetadata
 from app.output.ics_writer import ICSWriter
 
 WORK_LOCATION = "1403 29 St NW, Calgary AB T2N 2T9, Canada"
 
 
-def make_calendar_with_metadata(calendar: Calendar, name: str = "test") -> CalendarWithMetadata:
-    """Helper to wrap a Calendar with default metadata."""
-    metadata = CalendarMetadata(
+def make_calendar(events: list[Event], name: str = "test") -> Calendar:
+    """Helper to create a Calendar with default metadata."""
+    now = datetime.now()
+    return Calendar(
+        events=events,
         name=name,
-        created=datetime.now(),
-        last_updated=datetime.now(),
+        created=now,
+        last_updated=now,
     )
-    return CalendarWithMetadata(calendar=calendar, metadata=metadata)
 
 
 def test_make_calendar_creates_valid_icalendar():
@@ -36,15 +36,14 @@ def test_make_calendar_creates_valid_icalendar():
             end=time(10, 0),
         )
     ]
-    calendar = Calendar(events=events)
+    calendar = make_calendar(events)
 
     with tempfile.NamedTemporaryFile(suffix='.ics', delete=False) as f:
         temp_path = Path(f.name)
 
     try:
         writer = ICSWriter()
-        calendar_with_metadata = make_calendar_with_metadata(calendar)
-        writer.write(calendar_with_metadata, temp_path)
+        writer.write_calendar(calendar, temp_path)
 
         with open(temp_path, 'rb') as f:
             ical_content = f.read()
@@ -74,15 +73,14 @@ def test_make_calendar_includes_all_required_fields():
             end=time(10, 0),
         )
     ]
-    calendar = Calendar(events=events)
+    calendar = make_calendar(events)
 
     with tempfile.NamedTemporaryFile(suffix='.ics', delete=False) as f:
         temp_path = Path(f.name)
 
     try:
         writer = ICSWriter()
-        calendar_with_metadata = make_calendar_with_metadata(calendar)
-        writer.write(calendar_with_metadata, temp_path)
+        writer.write_calendar(calendar, temp_path)
 
         with open(temp_path, 'rb') as f:
             ical_content = f.read()
@@ -103,15 +101,14 @@ def test_make_calendar_handles_all_day_events():
     from pathlib import Path
 
     events = [Event(title="All Day Event", date=date(2025, 1, 1))]
-    calendar = Calendar(events=events)
+    calendar = make_calendar(events)
 
     with tempfile.NamedTemporaryFile(suffix='.ics', delete=False) as f:
         temp_path = Path(f.name)
 
     try:
         writer = ICSWriter()
-        calendar_with_metadata = make_calendar_with_metadata(calendar)
-        writer.write(calendar_with_metadata, temp_path)
+        writer.write_calendar(calendar, temp_path)
 
         with open(temp_path, 'rb') as f:
             ical_content = f.read()
@@ -132,15 +129,14 @@ def test_make_calendar_handles_multiple_events():
         Event(title="Event 1", date=date(2025, 1, 1), start=time(9, 0), end=time(10, 0)),
         Event(title="Event 2", date=date(2025, 1, 2)),
     ]
-    calendar = Calendar(events=events)
+    calendar = make_calendar(events)
 
     with tempfile.NamedTemporaryFile(suffix='.ics', delete=False) as f:
         temp_path = Path(f.name)
 
     try:
         writer = ICSWriter()
-        calendar_with_metadata = make_calendar_with_metadata(calendar)
-        writer.write(calendar_with_metadata, temp_path)
+        writer.write_calendar(calendar, temp_path)
 
         with open(temp_path, 'rb') as f:
             ical_content = f.read()
@@ -177,15 +173,14 @@ def test_calendar_location_handling():
             location="Other Location",
         ),
     ]
-    calendar = Calendar(events=events)
+    calendar = make_calendar(events)
 
     with tempfile.NamedTemporaryFile(suffix='.ics', delete=False) as f:
         temp_path = Path(f.name)
 
     try:
         writer = ICSWriter()
-        calendar_with_metadata = make_calendar_with_metadata(calendar)
-        writer.write(calendar_with_metadata, temp_path)
+        writer.write_calendar(calendar, temp_path)
 
         with open(temp_path, 'rb') as f:
             ical_content = f.read()

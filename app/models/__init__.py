@@ -2,13 +2,12 @@
 
 from app.models.calendar import Calendar
 from app.models.event import Event
-from app.models.metadata import CalendarMetadata, CalendarWithMetadata
+from app.models.ingestion import RawIngestion
 from app.models.settings import CalendarSettings
 
 __all__ = [
     "Event",
     "Calendar",
-    "CalendarMetadata",
-    "CalendarWithMetadata",
     "CalendarSettings",
+    "RawIngestion",
 ]

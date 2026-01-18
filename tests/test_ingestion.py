@@ -10,9 +10,10 @@ from app.ingestion.base import ReaderRegistry
 from app.ingestion.ics_reader import ICSReader
 from app.ingestion.json_reader import JSONReader
 from app.ingestion.word_reader import TypeMatcher, WordReader
-from app.models.calendar import Calendar
 from app.models.event import Event
+from app.models.ingestion import RawIngestion
 from app.models.template import CalendarTemplate, EventTypeConfig, TemplateDefaults
+from app.processing.merge_strategies import infer_year
 
 
 def test_reader_registry():
@@ -39,17 +40,20 @@ def test_word_reader():
 
     reader = WordReader()
     ingestion_result = reader.read(fixture_path)
-    calendar = ingestion_result.calendar
+    raw = ingestion_result.raw
 
-    assert isinstance(calendar, Calendar)
-    assert len(calendar.events) > 0
-    assert calendar.year == 2025
+    assert isinstance(raw, RawIngestion)
+    assert len(raw.events) > 0
+    
+    # Infer year from events
+    year = infer_year(raw.events)
+    assert year == 2025
 
     # Check that events are Event models
-    assert all(isinstance(event, Event) for event in calendar.events)
+    assert all(isinstance(event, Event) for event in raw.events)
 
     # Check that all events are from 2025
-    assert all(event.date.year == 2025 for event in calendar.events)
+    assert all(event.date.year == 2025 for event in raw.events)
 
 
 def test_word_reader_single_year_validation():
@@ -60,10 +64,10 @@ def test_word_reader_single_year_validation():
 
     reader = WordReader()
     ingestion_result = reader.read(fixture_path)
-    calendar = ingestion_result.calendar
+    raw = ingestion_result.raw
 
     # Should have a single year
-    years = {event.date.year for event in calendar.events}
+    years = {event.date.year for event in raw.events}
     assert len(years) == 1
 
 
@@ -74,6 +78,7 @@ def test_ics_reader():
 VERSION:2.0
 PRODID:-//Test//EN
 BEGIN:VEVENT
+UID:test-uid-123
 SUMMARY:Test Event
 DTSTART:20250101T090000
 DTEND:20250101T100000
@@ -89,12 +94,14 @@ END:VCALENDAR"""
     try:
         reader = ICSReader()
         ingestion_result = reader.read(temp_path)
-        calendar = ingestion_result.calendar
+        raw = ingestion_result.raw
 
-        assert isinstance(calendar, Calendar)
-        assert len(calendar.events) == 1
-        assert calendar.events[0].title == "Test Event"
-        assert calendar.events[0].date == date(2025, 1, 1)
+        assert isinstance(raw, RawIngestion)
+        assert len(raw.events) == 1
+        assert raw.events[0].title == "Test Event"
+        assert raw.events[0].date == date(2025, 1, 1)
+        # Check UID is extracted
+        assert raw.events[0].uid == "test-uid-123"
     finally:
         temp_path.unlink()
 
@@ -109,10 +116,10 @@ def test_ics_reader_empty_file():
 
     reader = ICSReader()
     ingestion_result = reader.read(temp_path)
-    calendar = ingestion_result.calendar
+    raw = ingestion_result.raw
 
-    assert isinstance(calendar, Calendar)
-    assert len(calendar.events) == 0
+    assert isinstance(raw, RawIngestion)
+    assert len(raw.events) == 0
 
 
 def test_json_reader():
@@ -138,11 +145,11 @@ def test_json_reader():
     try:
         reader = JSONReader()
         ingestion_result = reader.read(temp_path)
-        calendar = ingestion_result.calendar
+        raw = ingestion_result.raw
 
-        assert isinstance(calendar, Calendar)
-        assert len(calendar.events) == 1
-        assert calendar.events[0].title == "Test Event"
+        assert isinstance(raw, RawIngestion)
+        assert len(raw.events) == 1
+        assert raw.events[0].title == "Test Event"
     finally:
         temp_path.unlink()
 

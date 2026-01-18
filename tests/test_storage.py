@@ -12,12 +12,22 @@ from app.config import CalendarConfig
 from app.exceptions import CalendarGitRepoNotFoundError
 from app.models.calendar import Calendar
 from app.models.event import Event
-from app.models.metadata import CalendarMetadata, CalendarWithMetadata
 from app.output.ics_writer import ICSWriter
 from app.storage.calendar_repository import CalendarRepository
 from app.storage.calendar_storage import CalendarStorage
 from app.storage.git_service import GitService
 from app import setup_reader_registry
+
+
+def make_calendar(events: list[Event], name: str = "test") -> Calendar:
+    """Helper to create a Calendar with default metadata."""
+    now = datetime.now()
+    return Calendar(
+        events=events,
+        name=name,
+        created=now,
+        last_updated=now,
+    )
 
 
 @pytest.fixture
@@ -59,16 +69,10 @@ def test_calendar_storage_save(temp_calendar_dir):
     storage = CalendarStorage(config)
 
     events = [Event(title="Test", date=datetime(2025, 1, 1).date())]
-    calendar = Calendar(events=events)
-    metadata = CalendarMetadata(
-        name="test_calendar",
-        created=datetime.now(),
-        last_updated=datetime.now(),
-    )
-    calendar_with_metadata = CalendarWithMetadata(calendar=calendar, metadata=metadata)
+    calendar = make_calendar(events)
     writer = ICSWriter()
 
-    filepath = storage.save_calendar(calendar_with_metadata, writer, temp_calendar_dir)
+    filepath = storage.save_calendar(calendar, writer, temp_calendar_dir)
 
     assert filepath.exists()
     assert filepath.suffix == ".ics"
@@ -78,25 +82,18 @@ def test_calendar_storage_save(temp_calendar_dir):
 def test_calendar_repository_save_and_load(repository):
     """Test CalendarRepository save and load operations."""
     events = [Event(title="Test Event", date=datetime(2025, 1, 1).date())]
-    calendar = Calendar(events=events)
+    calendar = make_calendar(events, name="test_calendar")
 
-    metadata = CalendarMetadata(
-        name="test_calendar",
-        created=datetime.now(),
-        last_updated=datetime.now(),
-    )
-
-    writer = ICSWriter()
-    filepath = repository.save_calendar(calendar, metadata, writer)
+    filepath = repository.save(calendar)
 
     assert filepath.exists()
 
     # Load the calendar
     loaded = repository.load_calendar("test_calendar")
     assert loaded is not None
-    assert len(loaded.calendar.events) == 1
-    assert loaded.calendar.events[0].title == "Test Event"
-    assert loaded.metadata.name == "test_calendar"
+    assert len(loaded.events) == 1
+    assert loaded.events[0].title == "Test Event"
+    assert loaded.name == "test_calendar"
 
 
 def test_calendar_repository_list_calendars(repository):
@@ -114,14 +111,8 @@ def test_calendar_repository_list_calendars(repository):
 
     # Add data to the calendar
     events = [Event(title="Test", date=datetime(2025, 1, 1).date())]
-    calendar = Calendar(events=events)
-    metadata = CalendarMetadata(
-        name="test_calendar",
-        created=datetime.now(),
-        last_updated=datetime.now(),
-    )
-    writer = ICSWriter()
-    repository.save_calendar(calendar, metadata, writer)
+    calendar = make_calendar(events, name="test_calendar")
+    repository.save(calendar)
 
     # Should still have one calendar
     calendars = repository.list_calendars()
@@ -132,14 +123,8 @@ def test_calendar_repository_delete(repository):
     """Test CalendarRepository delete_calendar."""
     # Create a calendar
     events = [Event(title="Test", date=datetime(2025, 1, 1).date())]
-    calendar = Calendar(events=events)
-    metadata = CalendarMetadata(
-        name="test_calendar",
-        created=datetime.now(),
-        last_updated=datetime.now(),
-    )
-    writer = ICSWriter()
-    repository.save_calendar(calendar, metadata, writer)
+    calendar = make_calendar(events, name="test_calendar")
+    repository.save(calendar)
 
     # Delete it
     repository.delete_calendar("test_calendar")
@@ -156,16 +141,10 @@ def test_calendar_repository_delete(repository):
 def test_calendar_repository_latest_detection(repository):
     """Test CalendarRepository calendar path detection."""
     events = [Event(title="Test", date=datetime(2025, 1, 1).date())]
-    calendar = Calendar(events=events)
-    metadata = CalendarMetadata(
-        name="test_calendar",
-        created=datetime.now(),
-        last_updated=datetime.now(),
-    )
-    writer = ICSWriter()
+    calendar = make_calendar(events, name="test_calendar")
 
     # Save calendar
-    repository.save_calendar(calendar, metadata, writer)
+    repository.save(calendar)
 
     # Should return calendar.ics path
     latest_path = repository.get_calendar_path("test_calendar", "ics")
@@ -368,14 +347,8 @@ def test_calendar_repository_rename_calendar(repository):
 
     # Add data to the calendar
     events = [Event(title="Test", date=datetime(2025, 1, 1).date())]
-    calendar = Calendar(events=events)
-    metadata = CalendarMetadata(
-        name="old_name",
-        created=datetime.now(),
-        last_updated=datetime.now(),
-    )
-    writer = ICSWriter()
-    repository.save_calendar(calendar, metadata, writer)
+    calendar = make_calendar(events, name="old_name")
+    repository.save(calendar)
 
     # Rename it
     repository.rename_calendar("old_name", "new_name")
@@ -387,9 +360,9 @@ def test_calendar_repository_rename_calendar(repository):
     assert repository.calendar_exists("new_name")
     loaded = repository.load_calendar("new_name")
     assert loaded is not None
-    # metadata.name reflects ingestion context, not current calendar name
-    assert loaded.metadata.name == "old_name"
-    assert len(loaded.calendar.events) == 1
+    # name reflects ingestion context, not current calendar directory name
+    assert loaded.name == "old_name"
+    assert len(loaded.events) == 1
 
 
 def test_calendar_repository_rename_calendar_not_found(repository):

@@ -1,16 +1,30 @@
 """Processing layer for calendar events."""
 
 from app.processing.calendar_manager import CalendarManager, ProcessingResult
-from app.processing.calendar_merger import replace_year_in_calendar
-from app.processing.calendar_processor import CalendarProcessor
+from app.processing.calendar_processor import EventListProcessor
 from app.processing.configurable_processor import ConfigurableEventProcessor
 from app.processing.event_processor import process_events_with_template
+from app.processing.merge_strategies import (
+    Add,
+    MergeStrategy,
+    ReplaceByRange,
+    ReplaceByYear,
+    UpsertById,
+    infer_year,
+    merge_events,
+)
 
 __all__ = [
     "CalendarManager",
-    "CalendarProcessor",
+    "EventListProcessor",
     "ConfigurableEventProcessor",
     "ProcessingResult",
     "process_events_with_template",
-    "replace_year_in_calendar",
+    "Add",
+    "MergeStrategy",
+    "ReplaceByRange",
+    "ReplaceByYear",
+    "UpsertById",
+    "infer_year",
+    "merge_events",
 ]

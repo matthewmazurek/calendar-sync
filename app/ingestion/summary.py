@@ -2,13 +2,16 @@
 
 from collections import defaultdict
 from datetime import date, time, timedelta
-from typing import Dict
+from typing import TYPE_CHECKING, Dict
 
 from pydantic import BaseModel
 
-from app.models.calendar import Calendar
 from app.models.event import Event
-from app.models.ingestion import IngestionSummary
+from app.models.ingestion import IngestionSummary, RawIngestion
+from app.processing.merge_strategies import infer_year
+
+if TYPE_CHECKING:
+    from app.models.calendar import Calendar
 
 NOON = time(12, 0)
 
@@ -29,7 +32,7 @@ class CalendarStatistics(BaseModel):
 
 
 def build_calendar_statistics(
-    calendar: Calendar,
+    calendar: "Calendar",
     year: int | None = None,
     include_non_busy: bool = False,
     include_other: bool = False,
@@ -124,17 +127,19 @@ def build_calendar_statistics(
     )
 
 
-def build_ingestion_summary(calendar: Calendar) -> IngestionSummary:
-    """Build an ingestion summary for a calendar.
+def build_ingestion_summary(raw: RawIngestion) -> IngestionSummary:
+    """Build an ingestion summary for raw ingestion data.
 
     Args:
-        calendar: Source calendar to summarize.
+        raw: RawIngestion data to summarize.
 
     Returns:
         IngestionSummary with event counts, date range, and coverage stats.
     """
-    if calendar.events:
-        dates = [event.date for event in calendar.events]
+    events = raw.events
+    
+    if events:
+        dates = [event.date for event in events]
         min_date = min(dates)
         max_date = max(dates)
         date_range = f"{min_date} to {max_date}"
@@ -142,7 +147,7 @@ def build_ingestion_summary(calendar: Calendar) -> IngestionSummary:
         date_range = "no events"
 
     halfdays_booked: Dict[str, Dict[str, bool]] = {}
-    for event in calendar.events:
+    for event in events:
         _apply_event_to_halfdays(halfdays_booked, event)
 
     total_halfdays = sum(
@@ -154,11 +159,14 @@ def build_ingestion_summary(calendar: Calendar) -> IngestionSummary:
     else:
         weekly_coverage_year = None
 
+    # Infer year from events
+    year = infer_year(events)
+
     return IngestionSummary(
-        events=len(calendar.events),
+        events=len(events),
         date_range=date_range,
-        year=calendar.year,
-        revised_date=calendar.revised_date,
+        year=year,
+        revised_date=raw.revised_at,
         total_halfdays=total_halfdays,
         weekly_coverage_year=weekly_coverage_year,
     )

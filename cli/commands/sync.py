@@ -15,7 +15,7 @@ from app.exceptions import IngestionError, InvalidYearError, UnsupportedFormatEr
 from app.ingestion.service import IngestionService
 from app.models.ingestion import IngestionContext
 from app.models.template_loader import get_template
-from app.processing.calendar_manager import CalendarManager
+from app.processing.calendar_manager import CalendarManager, get_default_strategy_for_source
 from cli.commands.diff import display_diff
 from cli.context import get_context
 from cli.display import SummaryRenderer
@@ -108,15 +108,29 @@ def sync_command(
 
     # Check if calendar exists
     existing = repository.load_calendar(calendar_id)
-    existing_calendar = existing.calendar if existing else None
     is_new = existing is None
 
     ingestion_ctx = IngestionContext(
         input_path=input_path,
         ingestion_result=ingestion_result,
-        existing_calendar=existing_calendar,
+        existing_calendar=existing,
         is_new=is_new,
     )
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # Determine merge strategy
+    # ─────────────────────────────────────────────────────────────────────────
+    merge_strategy = None
+    if not is_new:
+        try:
+            merge_strategy = get_default_strategy_for_source(
+                input_path.suffix,
+                ingestion_result.raw.events,
+                year,
+            )
+        except InvalidYearError as e:
+            logger.error(f"Year validation error: {e}")
+            sys.exit(1)
 
     # ─────────────────────────────────────────────────────────────────────────
     # Output: Header
@@ -141,9 +155,10 @@ def sync_command(
     try:
         processing_result = manager.create_or_update(
             calendar_id,
-            ingestion_ctx.ingestion_result.calendar,
+            ingestion_ctx.ingestion_result.raw,
             ingestion_ctx.is_new,
             template,
+            merge_strategy,
             year,
         )
     except InvalidYearError as e:
@@ -161,12 +176,12 @@ def sync_command(
     # ─────────────────────────────────────────────────────────────────────────
     if ingestion_ctx.is_new:
         display_diff(
-            None, processing_result.result.calendar, "empty", "new", compact=True
+            None, processing_result.calendar.events, "empty", "new", compact=True
         )
     else:
         display_diff(
-            ingestion_ctx.existing_calendar,
-            processing_result.result.calendar,
+            ingestion_ctx.existing_calendar.events if ingestion_ctx.existing_calendar else None,
+            processing_result.calendar.events,
             "previous",
             "updated",
         )
@@ -179,19 +194,14 @@ def sync_command(
     # ─────────────────────────────────────────────────────────────────────────
     # Save: JSON + ICS export + local commit
     # ─────────────────────────────────────────────────────────────────────────
-    filepath = repository.save_calendar(
-        processing_result.result.calendar,
-        processing_result.result.metadata,
-        template=template,
-    )
+    filepath = repository.save(processing_result.calendar, template=template)
 
     # Success message
     if ingestion_ctx.is_new:
         renderer.render_success("Calendar created", filepath)
     else:
-        renderer.render_success(
-            f"Calendar updated (year {processing_result.year})", filepath
-        )
+        year_msg = f" (year {processing_result.year})" if processing_result.year else ""
+        renderer.render_success(f"Calendar updated{year_msg}", filepath)
 
     logger.info(f"Calendar saved: {filepath}")
 

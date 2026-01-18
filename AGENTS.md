@@ -116,14 +116,14 @@ from datetime import date
 ```python
 def load_calendar(
     self, name: str, format: str = "ics"
-) -> CalendarWithMetadata | None:
+) -> Calendar | None:
     """Load calendar by name."""
     pass
 ```
 
 ### Naming Conventions
 
-- **Classes**: PascalCase (`CalendarProcessor`, `CalendarTemplate`)
+- **Classes**: PascalCase (`EventListProcessor`, `CalendarTemplate`)
 - **Functions/methods**: snake_case (`process_events`, `get_calendar`)
 - **Variables**: snake_case (`calendar_name`, `event_type`)
 - **Constants**: UPPER_SNAKE_CASE (`CALENDAR_EXTENSIONS`, `METADATA_FILENAME`)
@@ -134,29 +134,26 @@ def load_calendar(
 Use Google-style docstrings for functions and classes:
 
 ```python
-def compose_calendar_with_source(
+def update_calendar(
     self,
     calendar_name: str,
-    source_calendar: Calendar,
-    year: int,
-    repository: CalendarRepository,
+    raw: RawIngestion,
+    strategy: MergeStrategy,
     template: CalendarTemplate | None = None,
-) -> tuple[CalendarWithMetadata, dict]:
-    """Compose existing calendar with new source data for a specific year.
+) -> ProcessingResult:
+    """Update an existing calendar using a merge strategy.
     
     Args:
         calendar_name: Name of the calendar to update
-        source_calendar: New calendar data to merge
-        year: Year to replace in existing calendar
-        repository: Calendar repository instance
+        raw: Raw ingestion data (events + revised_at)
+        strategy: Merge strategy to use
         template: Optional template configuration
     
     Returns:
-        Tuple of (processed_calendar_with_metadata, summary_dict)
+        ProcessingResult with the updated calendar
     
     Raises:
         CalendarNotFoundError: If calendar doesn't exist
-        InvalidYearError: If year validation fails
     """
 ```
 

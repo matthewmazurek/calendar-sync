@@ -1,31 +1,31 @@
-"""High-level processor for Calendar objects."""
+"""High-level processor for event lists."""
 
 import logging
 
-from app.models.calendar import Calendar
+from app.models.event import Event
 from app.models.template import CalendarTemplate
 from app.processing.event_processor import process_events_with_template
 
 logger = logging.getLogger(__name__)
 
 
-class CalendarProcessor:
-    """High-level processor that operates on Calendar objects."""
+class EventListProcessor:
+    """Processor that operates on lists of events."""
 
     def process(
-        self, calendar: Calendar, template: CalendarTemplate | None = None
-    ) -> tuple[Calendar, dict]:
-        """Process calendar events and return processed calendar with summary.
+        self, events: list[Event], template: CalendarTemplate | None = None
+    ) -> tuple[list[Event], dict]:
+        """Process events and return processed events with summary.
 
         Args:
-            calendar: Calendar to process
+            events: List of events to process
             template: Optional template configuration
 
         Returns:
-            Tuple of (processed_calendar, summary_dict) where summary_dict contains
+            Tuple of (processed_events, summary_dict) where summary_dict contains
             event counts by type before and after processing.
         """
-        logger.info(f"Processing {len(calendar.events)} events")
+        logger.info(f"Processing {len(events)} events")
         if template:
             logger.info(
                 f"Processing with template: {template.name} (version {template.version})"
@@ -34,15 +34,6 @@ class CalendarProcessor:
             logger.warning(
                 "No template provided - using minimal fallback template for processing."
             )
-        processed_events, summary = process_events_with_template(
-            calendar.events, template
-        )
+        processed_events, summary = process_events_with_template(events, template)
         logger.info(f"Processed to {len(processed_events)} events")
-        return (
-            Calendar(
-                events=processed_events,
-                revised_date=calendar.revised_date,
-                year=calendar.year,
-            ),
-            summary,
-        )
+        return processed_events, summary
