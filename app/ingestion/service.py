@@ -67,7 +67,7 @@ class IngestionService:
             ingestion_result = reader.read(input_path)
 
         logger.info(
-            f"Ingested {len(ingestion_result.calendar.events)} events from {input_path}"
+            f"Ingested {len(ingestion_result.raw.events)} events from {input_path}"
         )
 
         return ingestion_result

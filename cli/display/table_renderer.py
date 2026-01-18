@@ -7,7 +7,7 @@ from pathlib import Path
 from rich.table import Table
 
 from cli.display.console import console
-from cli.display.formatters import format_file_size, format_relative_time
+from cli.display.formatters import format_file_size, format_path, format_relative_time
 
 
 @dataclass
@@ -32,7 +32,7 @@ class VersionInfo:
     is_current: bool
     file_size: int | None = None
     event_count: int | None = None
-    file_path: str | None = None
+    is_valid: bool | None = None  # None = not checked, False = validation failed
 
 
 class TableRenderer:
@@ -59,7 +59,7 @@ class TableRenderer:
             return
 
         console.print(
-            f"Listing calendars at {calendar_dir.resolve()} ({archived_count} archived):"
+            f"Listing calendars at {format_path(calendar_dir)} ({archived_count} archived):"
         )
         console.print()
 
@@ -87,7 +87,11 @@ class TableRenderer:
             )
 
             table.add_row(
-                id_display, name_display, created_str, updated_str, cal.config_path
+                id_display,
+                name_display,
+                created_str,
+                updated_str,
+                format_path(cal.config_path),
             )
 
         console.print(table)
@@ -96,27 +100,28 @@ class TableRenderer:
         self,
         versions: list[VersionInfo],
         calendar_name: str,
-        calendar_path: Path,
         total_versions: int,
         show_details: bool = False,
         truncated: bool = False,
+        data_path: str | None = None,
     ) -> None:
         """Render a list of calendar versions as a table.
 
         Args:
             versions: List of VersionInfo objects to display.
             calendar_name: Name of the calendar.
-            calendar_path: Path to the calendar file.
             total_versions: Total number of versions (for header).
-            show_details: Whether to show detailed info (size, events, path).
+            show_details: Whether to show detailed info (size, events, valid).
             truncated: Whether the list was truncated.
+            data_path: Path to the data file (shown in header).
         """
         if not versions:
             console.print(f"No versions found for calendar '{calendar_name}'")
             return
 
+        path_suffix = f" ({data_path})" if data_path else ""
         console.print(
-            f"Versions for calendar '{calendar_name}' ({calendar_path.resolve()}) ({total_versions} total):"
+            f"Versions for calendar '{calendar_name}'{path_suffix} ({total_versions} total):"
         )
         console.print()
 
@@ -129,7 +134,9 @@ class TableRenderer:
         if show_details:
             table.add_column("SIZE", justify="right", style="dim")
             table.add_column("EVENTS", justify="right")
-            table.add_column("PATH", style="dim")
+            table.add_column("VALID", justify="center")
+
+        table.add_column("")  # Current marker column (unlabeled)
 
         for ver in versions:
             short_hash = ver.commit_hash[:7]
@@ -142,14 +149,19 @@ class TableRenderer:
             relative_str = format_relative_time(commit_date)
 
             # Current marker
-            current_marker = " [green]← current[/green]" if ver.is_current else ""
+            current_marker = "[green]← current[/green]" if ver.is_current else ""
 
             if show_details:
                 size_str = format_file_size(ver.file_size) if ver.file_size else "-"
                 events_str = (
                     str(ver.event_count) if ver.event_count is not None else "-"
                 )
-                path_str = (ver.file_path or "") + current_marker
+                if ver.is_valid is True:
+                    valid_str = "[green]✓[/green]"
+                elif ver.is_valid is False:
+                    valid_str = "[red]✗[/red]"
+                else:
+                    valid_str = "-"
 
                 table.add_row(
                     str(ver.version_num),
@@ -158,14 +170,16 @@ class TableRenderer:
                     relative_str,
                     size_str,
                     events_str,
-                    path_str,
+                    valid_str,
+                    current_marker,
                 )
             else:
                 table.add_row(
                     str(ver.version_num),
                     short_hash,
                     date_str,
-                    relative_str + current_marker,
+                    relative_str,
+                    current_marker,
                 )
 
         console.print(table)

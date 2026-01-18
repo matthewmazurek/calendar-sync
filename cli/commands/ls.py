@@ -5,6 +5,9 @@ from pathlib import Path
 import typer
 from typing_extensions import Annotated
 
+from app.config import CalendarConfig
+from app.models.calendar import Calendar
+from app.storage.calendar_repository import CalendarRepository
 from cli.context import get_context
 from cli.display.table_renderer import CalendarInfo, TableRenderer, VersionInfo
 
@@ -111,8 +114,8 @@ def _list_calendars(
 
 
 def _list_versions(
-    repository,
-    config,
+    repository: CalendarRepository,
+    config: CalendarConfig,
     renderer: TableRenderer,
     name: str,
     show_all: bool,
@@ -144,9 +147,6 @@ def _list_versions(
     git_service = repository.git_service
     repo_root = git_service.repo_root
 
-    # ICS export path for display (what users subscribe to)
-    calendar_path = paths.export("ics")
-
     # Canonical path for version tracking (data.json is the source of truth)
     canonical_path = paths.data
 
@@ -165,29 +165,24 @@ def _list_versions(
     for idx, (commit_hash, commit_date, commit_message) in enumerate(versions_data, 1):
         file_size = None
         event_count = None
-        file_path_display = None
+        is_valid = None
 
         if show_info:
             try:
-                # Get relative path from repo root
-                try:
-                    rel_path = calendar_path.relative_to(repo_root)
-                    file_path_display = str(rel_path)
-                except ValueError:
-                    file_path_display = str(calendar_path)
-
                 # Get file content to calculate size and event count
                 calendar_content = git_service.get_file_at_commit(
-                    calendar_path, commit_hash
+                    canonical_path, commit_hash
                 )
                 if calendar_content:
                     file_size = len(calendar_content)
+                    # Validate using Calendar model and count events
+                    try:
+                        calendar = Calendar.model_validate_json(calendar_content)
+                        event_count = len(calendar.events)
+                        is_valid = True
+                    except Exception:
+                        is_valid = False
 
-                    # Try to count VEVENT components in ICS file
-                    if calendar_path.suffix == ".ics":
-                        event_count = calendar_content.decode("utf-8").count(
-                            "BEGIN:VEVENT"
-                        )
             except Exception:
                 pass
 
@@ -199,15 +194,21 @@ def _list_versions(
                 is_current=commit_hash == current_commit_hash,
                 file_size=file_size,
                 event_count=event_count,
-                file_path=file_path_display,
+                is_valid=is_valid,
             )
         )
+
+    # Get display path (relative to cwd)
+    try:
+        data_path_display = str(canonical_path.resolve().relative_to(Path.cwd()))
+    except ValueError:
+        data_path_display = str(canonical_path.resolve())
 
     renderer.render_version_list(
         versions,
         calendar_name=name,
-        calendar_path=calendar_path,
         total_versions=total_versions,
         show_details=show_info,
         truncated=truncated,
+        data_path=data_path_display,
     )

@@ -8,7 +8,7 @@ from typing_extensions import Annotated
 
 from app.storage.subscription_url_generator import SubscriptionUrlGenerator
 from cli.context import get_context
-from cli.display import console, format_datetime, format_file_size
+from cli.display import console, format_datetime, format_file_size, format_path
 
 logger = logging.getLogger(__name__)
 
@@ -66,7 +66,7 @@ def info(
     if settings.template:
         info_table.add_row("Template", settings.template)
     info_table.add_row("Created", format_datetime(settings.created))
-    info_table.add_row("Path", str(paths.directory.resolve()))
+    info_table.add_row("Path", format_path(paths.directory))
 
     console.print(info_table)
 
@@ -109,7 +109,7 @@ def info(
             data_size = paths.data.stat().st_size
             ingest_table.add_row(
                 "Data file",
-                f"{paths.data} [dim]({format_file_size(data_size)})[/dim]",
+                f"{format_path(paths.data)} [dim]({format_file_size(data_size)})[/dim]",
             )
 
         console.print(ingest_table)
@@ -185,7 +185,7 @@ def info(
         ics_size = ics_path.stat().st_size
         export_table.add_row(
             "calendar.ics",
-            f"{ics_path} [dim]({format_file_size(ics_size)})[/dim]",
+            f"{format_path(ics_path)} [dim]({format_file_size(ics_size)})[/dim]",
         )
         console.print(export_table)
     else:

@@ -18,7 +18,7 @@ from app.models.template_loader import get_template
 from app.processing.calendar_manager import CalendarManager, get_default_strategy_for_source
 from cli.commands.diff import display_diff
 from cli.context import get_context
-from cli.display import SummaryRenderer
+from cli.display import SummaryRenderer, push_calendar
 from cli.utils import confirm_or_exit
 
 logger = logging.getLogger(__name__)
@@ -209,8 +209,20 @@ def sync_command(
     # Publish to git (optional)
     # ─────────────────────────────────────────────────────────────────────────
     if push:
-        git_service.publish_calendar(calendar_id, filepath)
-        renderer.render_success("Pushed to git")
+        remote_url = ctx.config.calendar_git_remote_url or git_service.get_remote_url()
+        event_count = len(processing_result.calendar.events)
+
+        success = push_calendar(
+            git_service=git_service,
+            calendar_name=calendar_id,
+            calendar_path=filepath,
+            event_count=event_count,
+            remote_url=remote_url,
+            show_header=False,  # Context is already clear from sync output
+        )
+
+        if not success:
+            sys.exit(1)
 
 
 # Alias for backwards compatibility with CLI registration

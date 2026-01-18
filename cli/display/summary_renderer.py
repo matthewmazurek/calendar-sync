@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from cli.display.console import console
+from cli.display.formatters import format_path
 
 if TYPE_CHECKING:
     from app.models.ingestion import IngestionSummary
@@ -46,7 +47,7 @@ class SummaryRenderer:
             ingestion_summary: Summary of ingested data.
             template: Template used for processing.
         """
-        console.print(f"\nSource: \"{input_path}\"")
+        console.print(f"\nSource: \"{format_path(input_path)}\"")
         source_details = [
             f"{ingestion_summary.events} events",
             ingestion_summary.date_range,
@@ -125,4 +126,4 @@ class SummaryRenderer:
         """
         console.print(f"\n[bold green]✓[/bold green] {message}")
         if path:
-            console.print(f"  \"{path.resolve()}\"")
+            console.print(f"  \"{format_path(path)}\"")

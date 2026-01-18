@@ -1,6 +1,7 @@
 """Pure formatting functions for display output."""
 
 from datetime import date, datetime, timezone
+from pathlib import Path
 
 
 def format_relative_time(dt: datetime) -> str:
@@ -91,3 +92,25 @@ def format_datetime(
         relative = format_relative_time(dt)
         return f"{date_str} ({relative})"
     return date_str
+
+
+def format_path(path: Path | str) -> str:
+    """Format a path as relative to the current working directory.
+
+    Args:
+        path: Path to format (can be Path object or string).
+
+    Returns:
+        Relative path string if possible, otherwise the original path.
+    """
+    if isinstance(path, str):
+        path = Path(path)
+
+    try:
+        # Try to make relative to current working directory
+        cwd = Path.cwd()
+        relative = path.resolve().relative_to(cwd)
+        return str(relative)
+    except ValueError:
+        # Path is not relative to cwd, return as-is
+        return str(path)
