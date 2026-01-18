@@ -31,8 +31,12 @@ def delete(
     repository = ctx.repository
     git_service = ctx.git_service
 
+    # For regular delete (not purge), calendar must exist
+    if not purge_history and not repository.calendar_exists(name):
+        logger.error(f"Calendar '{name}' not found")
+        raise typer.Exit(1)
+
     paths = repository.paths(name)
-    calendar_exists = paths.directory.exists()
 
     # Show confirmation prompt unless --force is set
     if not force:
@@ -59,7 +63,7 @@ def delete(
         typer.echo(f"Purging calendar '{name}' from git history...")
         if git_service.purge_from_history(name):
             # After purging from history, remove from filesystem if it still exists
-            if calendar_exists:
+            if paths.directory.exists():
                 repository.delete_calendar(name)
             print(
                 f"\n{typer.style('✓', fg=typer.colors.GREEN, bold=True)} "
@@ -69,14 +73,10 @@ def delete(
             logger.error(f"Failed to purge calendar '{name}' from git history")
             raise typer.Exit(1)
     else:
-        # Regular delete: requires calendar to exist
-        if not calendar_exists:
-            logger.error(f"Calendar '{name}' not found")
-            raise typer.Exit(1)
-
-        # Remove from filesystem and commit deletion to git
+        # Regular delete
+        # Remove from filesystem first
         repository.delete_calendar(name)
-        # Commit the deletion to git for audit trail
+        # Then commit the deletion to git (git add -A stages the deletions)
         git_service.commit_deletion(name)
         print(
             f"\n{typer.style('✓', fg=typer.colors.GREEN, bold=True)} "

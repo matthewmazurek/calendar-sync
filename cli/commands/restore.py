@@ -23,7 +23,7 @@ def restore(
         typer.Argument(
             help="Git commit hash, version number (#3 or 3), or relative command (latest, previous)"
         ),
-    ],
+    ] = "previous",
     force: Annotated[
         bool,
         typer.Option("--force", "-f", help="Skip confirmation prompt"),

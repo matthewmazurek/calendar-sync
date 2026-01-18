@@ -398,6 +398,7 @@ class GitService:
 
         try:
             calendar_dir = self.repo_root / calendar_name
+            rel_calendar_dir = self._get_relative_path(calendar_dir)
 
             # Get repo root for git commands
             repo_root = self._get_repo_root()
@@ -405,19 +406,14 @@ class GitService:
                 logger.warning("Could not determine git repo root")
                 return
 
-            # Stage deletion of calendar files (use git rm to track deletion)
-            calendar_file = calendar_dir / self.export_pattern.format(format="ics")
-            # Use git rm to stage deletion (works even if file doesn't exist in working dir)
-            # --ignore-unmatch prevents error if file doesn't exist in git
-            self.git_client.run_command(
-                ["git", "rm", "--ignore-unmatch", str(calendar_file)],
+            # Stage all changes in the calendar directory (including deletions)
+            # Using git add -A stages deleted files after they're removed from filesystem
+            result = self.git_client.run_command(
+                ["git", "add", "-A", str(rel_calendar_dir)],
                 repo_root,
             )
-
-            # Also remove the directory itself if it's tracked (recursive)
-            self.git_client.run_command(
-                ["git", "rm", "-r", "--ignore-unmatch", str(calendar_dir)],
-                repo_root,
+            logger.debug(
+                f"git add -A result: {result.returncode}, stderr: {result.stderr}"
             )
 
             # Commit the deletion

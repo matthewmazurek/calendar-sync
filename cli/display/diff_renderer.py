@@ -1,8 +1,13 @@
 """Diff renderer for calendar comparison display."""
 
+from datetime import time
+
 from app.models.calendar import Calendar
 from app.models.event import Event
 from cli.display.console import console
+
+# Used for sorting events without a start time (all-day events sort to beginning of day)
+_SORT_TIME_FALLBACK = time(0, 0)
 
 
 class DiffRenderer:
@@ -128,7 +133,7 @@ class DiffRenderer:
             return
 
         console.print("[bold green]Added events:[/bold green]")
-        for event in sorted(added, key=lambda e: (e.date, e.start or e.date)):
+        for event in sorted(added, key=lambda e: (e.date, e.start or _SORT_TIME_FALLBACK)):
             summary = self.format_event_summary(event)
             console.print(f"[green]  + {summary}[/green]")
         console.print()
@@ -139,7 +144,7 @@ class DiffRenderer:
             return
 
         console.print("[bold red]Removed events:[/bold red]")
-        for event in sorted(removed, key=lambda e: (e.date, e.start or e.date)):
+        for event in sorted(removed, key=lambda e: (e.date, e.start or _SORT_TIME_FALLBACK)):
             summary = self.format_event_summary(event)
             console.print(f"[red]  - {summary}[/red]")
         console.print()
@@ -154,7 +159,7 @@ class DiffRenderer:
 
         console.print("[bold yellow]Modified events:[/bold yellow]")
         for old_event, new_event in sorted(
-            modified, key=lambda x: (x[1].date, x[1].start or x[1].date)
+            modified, key=lambda x: (x[1].date, x[1].start or _SORT_TIME_FALLBACK)
         ):
             summary = self.format_event_summary(new_event)
             console.print(f"[yellow]  ~ {summary}[/yellow]")
